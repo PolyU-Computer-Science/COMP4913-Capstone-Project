@@ -13,7 +13,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from email_assistant.core.structured_llm import OpenRouterStructuredClient, StructuredLLMResult
+from email_assistant.core.structured_llm import OpenAICompatibleStructuredClient, StructuredLLMResult
 
 
 class ClassificationContract(BaseModel):
@@ -75,7 +75,7 @@ def build_classification_prompt(*, email_content: str, topics: list[dict[str, An
 class StructuredClassifier:
     """Runs classification through the structured client + business validators."""
 
-    def __init__(self, client: OpenRouterStructuredClient) -> None:
+    def __init__(self, client: OpenAICompatibleStructuredClient) -> None:
         self._client = client
 
     def classify(

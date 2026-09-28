@@ -70,7 +70,10 @@ def run() -> None:
 
     from email_assistant.core.settings_store import SettingsStore
 
-    SettingsStore().ensure_default_ai_config()
+    store = SettingsStore()
+    store.ensure_default_ai_config()
+    store.ensure_default_stage_settings()
+    store.ensure_default_mailbox()
 
     # Backfill any legacy emails that predate mailbox scoping.
     try:

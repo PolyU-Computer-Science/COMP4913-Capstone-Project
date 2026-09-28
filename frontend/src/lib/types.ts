@@ -196,14 +196,12 @@ export interface Topic {
   mailbox_id: number
   name: string
   description: string
-  examples: string
   status: string
 }
 
 export interface TopicIn {
   name: string
   description: string
-  examples: string
   status: string
 }
 
@@ -214,6 +212,7 @@ export interface CustomField {
   type: string
   required: boolean
   options: string
+  prompt: string
   status: string
 }
 
@@ -222,6 +221,7 @@ export interface CustomFieldIn {
   type: string
   required: boolean
   options: string
+  prompt: string
   status: string
 }
 

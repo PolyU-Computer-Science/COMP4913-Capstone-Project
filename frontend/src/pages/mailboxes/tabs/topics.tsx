@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Tag, Trash2 } from 'lucide-react'
+import { Pencil, Plus, Tag, Trash2 } from 'lucide-react'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { EmptyState } from '@/components/empty-state'
@@ -25,21 +25,21 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { createTopic, deleteTopic, fetchTopics } from '@/lib/api'
+import { createTopic, deleteTopic, fetchTopics, updateTopic } from '@/lib/api'
 import type { Topic, TopicIn } from '@/lib/types'
 import { toast } from 'sonner'
 
 interface FormState {
   name: string
   description: string
-  examples: string
 }
 
-const EMPTY: FormState = { name: '', description: '', examples: '' }
+const EMPTY: FormState = { name: '', description: '' }
 
 export function TopicsTab({ mailboxId }: { mailboxId: number }) {
   const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState<FormState>(EMPTY)
   const [toDelete, setToDelete] = useState<Topic | null>(null)
 
@@ -59,6 +59,17 @@ export function TopicsTab({ mailboxId }: { mailboxId: number }) {
     onError: () => toast.error('Failed to add topic'),
   })
 
+  const updateMutation = useMutation({
+    mutationFn: ({ id, payload }: { id: number; payload: TopicIn }) =>
+      updateTopic(id, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mailbox-topics', mailboxId] })
+      setDialogOpen(false)
+      toast.success('Topic saved')
+    },
+    onError: () => toast.error('Failed to save topic'),
+  })
+
   const deleteMutation = useMutation({
     mutationFn: deleteTopic,
     onSuccess: () => {
@@ -68,6 +79,21 @@ export function TopicsTab({ mailboxId }: { mailboxId: number }) {
     onError: () => toast.error('Failed to delete topic'),
   })
 
+  function openCreate() {
+    setEditingId(null)
+    setForm(EMPTY)
+    setDialogOpen(true)
+  }
+
+  function openEdit(topic: Topic) {
+    setEditingId(topic.id)
+    setForm({
+      name: topic.name,
+      description: topic.description,
+    })
+    setDialogOpen(true)
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
@@ -75,7 +101,7 @@ export function TopicsTab({ mailboxId }: { mailboxId: number }) {
           Topics help the classifier understand the business context of this
           mailbox.
         </p>
-        <Button onClick={() => setDialogOpen(true)}>
+        <Button onClick={openCreate}>
           <Plus />
           Add Topic
         </Button>
@@ -87,7 +113,7 @@ export function TopicsTab({ mailboxId }: { mailboxId: number }) {
           title="No topics yet"
           description="Define topics like Password Reset or Refund to guide classification."
           action={
-            <Button onClick={() => setDialogOpen(true)}>
+            <Button onClick={openCreate}>
               <Plus />
               Add Topic
             </Button>
@@ -100,9 +126,9 @@ export function TopicsTab({ mailboxId }: { mailboxId: number }) {
               <TableHeader>
                 <TableRow>
                   <TableHead>Topic</TableHead>
-                  <TableHead>Description</TableHead>
+                  <TableHead>Prompt</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead className="w-16" />
+                  <TableHead className="w-20" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -116,13 +142,22 @@ export function TopicsTab({ mailboxId }: { mailboxId: number }) {
                       <StatusBadge status={topic.status} />
                     </TableCell>
                     <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => setToDelete(topic)}
-                      >
-                        <Trash2 />
-                      </Button>
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => openEdit(topic)}
+                        >
+                          <Pencil />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => setToDelete(topic)}
+                        >
+                          <Trash2 />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -135,7 +170,9 @@ export function TopicsTab({ mailboxId }: { mailboxId: number }) {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Topic</DialogTitle>
+            <DialogTitle>
+              {editingId === null ? 'Add Topic' : 'Edit Topic'}
+            </DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
@@ -147,25 +184,19 @@ export function TopicsTab({ mailboxId }: { mailboxId: number }) {
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label>Description</Label>
-              <Input
+              <Label>Prompt</Label>
+              <Textarea
+                rows={3}
                 value={form.description}
                 onChange={(e) =>
                   setForm((p) => ({ ...p, description: e.target.value }))
                 }
-                placeholder="Requests relating to forgotten passwords"
+                placeholder="Requests relating to forgotten passwords; only assign when the sender cannot log in."
               />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>Examples</Label>
-              <Textarea
-                rows={3}
-                value={form.examples}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, examples: e.target.value }))
-                }
-                placeholder={'One example per line:\nHow can I reset my password?'}
-              />
+              <p className="text-xs text-muted-foreground">
+                Injected into the classifier prompt as guidance for this
+                topic.
+              </p>
             </div>
           </div>
           <DialogFooter>
@@ -173,12 +204,21 @@ export function TopicsTab({ mailboxId }: { mailboxId: number }) {
               Cancel
             </Button>
             <Button
-              onClick={() =>
-                createMutation.mutate({ ...form, status: 'active' })
+              onClick={() => {
+                const payload: TopicIn = { ...form, status: 'active' }
+                if (editingId === null) {
+                  createMutation.mutate(payload)
+                } else {
+                  updateMutation.mutate({ id: editingId, payload })
+                }
+              }}
+              disabled={
+                createMutation.isPending ||
+                updateMutation.isPending ||
+                !form.name.trim()
               }
-              disabled={createMutation.isPending || !form.name.trim()}
             >
-              Add Topic
+              {editingId === null ? 'Add Topic' : 'Save'}
             </Button>
           </DialogFooter>
         </DialogContent>

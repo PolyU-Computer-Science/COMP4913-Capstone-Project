@@ -6,7 +6,7 @@ to verify the runtime path works. Never prints the API key and never writes
 results to a committed file.
 
 Usage:
-    uv run python scripts/smoke_openrouter_embeddings.py
+    uv run python scripts/smoke_openai_embeddings.py
 """
 
 from __future__ import annotations
@@ -24,14 +24,14 @@ def _banner(title: str) -> None:
 
 def main() -> None:
     from email_assistant.core.embeddings import cosine_similarity
-    from email_assistant.core.openrouter_embeddings import (
-        OpenRouterEmbeddingClient,
-        build_openrouter_embedding_client,
+    from email_assistant.core.openai_embeddings import (
+        OpenAICompatibleEmbeddingClient,
+        build_openai_compatible_embedding_client,
     )
 
     _banner("Config")
     try:
-        client = build_openrouter_embedding_client()
+        client = build_openai_compatible_embedding_client()
     except Exception as error:  # noqa: BLE001
         print(f"FAILED to build client: {error}")
         return

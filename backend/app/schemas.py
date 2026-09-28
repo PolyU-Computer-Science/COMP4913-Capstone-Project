@@ -249,7 +249,6 @@ class MailboxOut(BaseModel):
 class TopicIn(BaseModel):
     name: str
     description: str = ""
-    examples: str = ""
     status: str = "active"
 
 
@@ -258,7 +257,6 @@ class TopicOut(BaseModel):
     mailbox_id: int
     name: str
     description: str = ""
-    examples: str = ""
     status: str = "active"
 
 
@@ -267,6 +265,7 @@ class CustomFieldIn(BaseModel):
     type: str = "text"
     required: bool = False
     options: str = ""
+    prompt: str = ""
     status: str = "active"
 
 
@@ -277,6 +276,7 @@ class CustomFieldOut(BaseModel):
     type: str = "text"
     required: bool = False
     options: str = ""
+    prompt: str = ""
     status: str = "active"
 
 

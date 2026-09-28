@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { fetchStages, saveStages } from '@/lib/api'
 import type { StageConfig, StagesSettings } from '@/lib/types'
@@ -67,7 +68,11 @@ export default function GeneralPage() {
       .finally(() => setLoading(false))
   }, [])
 
-  function setStage(stage: 'classification' | 'draft', key: keyof StageForm, value: string) {
+  function setStage(
+    stage: 'classification' | 'draft',
+    key: keyof StageForm,
+    value: string,
+  ) {
     const setter = stage === 'classification' ? setClassification : setDraft
     setter((prev) => ({ ...prev, [key]: value }))
   }
@@ -92,7 +97,13 @@ export default function GeneralPage() {
     <div className="flex max-w-3xl flex-col gap-4 p-4 md:p-6">
       <PageHeader
         title="General"
-        description="Global prompt and parameter defaults for the classification and drafting stages."
+        description="Global prompt and parameter defaults for the classification and drafting stages. Per-topic guidance is configured in each mailbox's Topics tab."
+        action={
+          <Button onClick={handleSave} disabled={saving || loading}>
+            {saving ? <Loader2 className="animate-spin" /> : null}
+            Save Changes
+          </Button>
+        }
       />
 
       {loading ? (
@@ -100,74 +111,72 @@ export default function GeneralPage() {
           <Loader2 className="animate-spin" /> Loading…
         </div>
       ) : (
-        <>
-          <Card>
-            <CardContent className="flex flex-col gap-3 pt-4">
-              <StageSection
-                title="Classification"
-                description="Classifies each email's category, topic, and priority."
-                form={classification}
-                onChange={(key, value) => setStage('classification', key, value)}
-                promptHint="Keep {email_content} in the prompt to inject the email."
-              />
-            </CardContent>
-          </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <Tabs defaultValue="classification">
+              <TabsList>
+                <TabsTrigger value="classification">Classification</TabsTrigger>
+                <TabsTrigger value="draft">Drafting</TabsTrigger>
+              </TabsList>
 
-          <Card>
-            <CardContent className="flex flex-col gap-3 pt-4">
-              <StageSection
-                title="Drafting"
-                description="Drafts a professional reply from the classification."
-                form={draft}
-                onChange={(key, value) => setStage('draft', key, value)}
-              />
-            </CardContent>
-          </Card>
+              <TabsContent value="classification" className="mt-4">
+                <StageFormFields
+                  form={classification}
+                  onChange={(key, value) => setStage('classification', key, value)}
+                  promptHint="Use {email_content} to inject the email content."
+                />
+              </TabsContent>
 
-          <div className="flex justify-end gap-2">
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? <Loader2 className="animate-spin" /> : null}
-              Save Changes
-            </Button>
-          </div>
-        </>
+              <TabsContent value="draft" className="mt-4">
+                <StageFormFields
+                  form={draft}
+                  onChange={(key, value) => setStage('draft', key, value)}
+                  promptHint="Use {email_content} for the email and {knowledge_context} for retrieved knowledge."
+                />
+              </TabsContent>
+            </Tabs>
+          </CardContent>
+        </Card>
       )}
     </div>
   )
 }
 
-function StageSection({
-  title,
-  description,
+function StageFormFields({
   form,
   onChange,
   promptHint,
 }: {
-  title: string
-  description: string
   form: StageForm
   onChange: (key: keyof StageForm, value: string) => void
   promptHint?: string
 }) {
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-0.5">
-        <h3 className="text-sm font-semibold">{title}</h3>
-        <p className="text-xs text-muted-foreground">{description}</p>
-      </div>
-
+    <div className="flex flex-col gap-4">
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <div className="flex flex-col gap-1.5">
           <Label>Role</Label>
-          <Input value={form.role} onChange={(e) => onChange('role', e.target.value)} />
+          <Input
+            value={form.role}
+            onChange={(e) => onChange('role', e.target.value)}
+            placeholder="Email Classifier"
+          />
         </div>
         <div className="flex flex-col gap-1.5">
           <Label>Goal</Label>
-          <Input value={form.goal} onChange={(e) => onChange('goal', e.target.value)} />
+          <Input
+            value={form.goal}
+            onChange={(e) => onChange('goal', e.target.value)}
+            placeholder="What this stage should achieve"
+          />
         </div>
         <div className="flex flex-col gap-1.5">
           <Label>Backstory</Label>
-          <Input value={form.backstory} onChange={(e) => onChange('backstory', e.target.value)} />
+          <Input
+            value={form.backstory}
+            onChange={(e) => onChange('backstory', e.target.value)}
+            placeholder="Persona and experience"
+          />
         </div>
       </div>
 
@@ -176,7 +185,8 @@ function StageSection({
         <Textarea
           value={form.prompt}
           onChange={(e) => onChange('prompt', e.target.value)}
-          rows={4}
+          rows={10}
+          className="font-mono text-sm"
         />
         {promptHint ? (
           <p className="text-xs text-muted-foreground">{promptHint}</p>

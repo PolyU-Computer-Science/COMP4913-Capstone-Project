@@ -15,7 +15,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from email_assistant.core.structured_llm import OpenRouterStructuredClient
+from email_assistant.core.structured_llm import OpenAICompatibleStructuredClient
 
 
 class ActionProposal(BaseModel):
@@ -73,7 +73,7 @@ def build_tool_planner_prompt(
 class ToolPlanner:
     """Produces a validated ActionProposal via structured LLM output."""
 
-    def __init__(self, client: OpenRouterStructuredClient) -> None:
+    def __init__(self, client: OpenAICompatibleStructuredClient) -> None:
         self._client = client
 
     def plan(

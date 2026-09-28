@@ -128,17 +128,19 @@ def get_embedding_client(provider: str = "hashing") -> EmbeddingClient:
     """Return an embedding client for the given provider string.
 
     ``hashing`` (and ``local``/empty) resolve to the deterministic offline
-    client. ``openrouter`` resolves to the semantic OpenRouter client using
-    env config — a missing API key raises ``EmbeddingConfigurationError``
-    (no silent fallback). Unknown providers raise too, so a typo in
-    ``EMBEDDING_PROVIDER`` is caught instead of silently degrading to hashing.
+    client. ``openrouter``/``openai``/``ollama``/``mistral``/``gemini``
+    resolve to the semantic OpenAI-compatible client using env config — a
+    missing API key raises ``EmbeddingConfigurationError`` (no silent
+    fallback). Unknown providers raise too, so a typo in
+    ``EMBEDDING_PROVIDER`` is caught instead of silently degrading to
+    hashing.
     """
-    if provider == "openrouter":
-        from email_assistant.core.openrouter_embeddings import (
-            build_openrouter_embedding_client,
+    if provider in ("openrouter", "openai", "ollama", "mistral", "gemini"):
+        from email_assistant.core.openai_embeddings import (
+            build_openai_compatible_embedding_client,
         )
 
-        return build_openrouter_embedding_client()
+        return build_openai_compatible_embedding_client(provider)
 
     if provider in ("hashing", "local", ""):
         return HashingEmbeddingClient()

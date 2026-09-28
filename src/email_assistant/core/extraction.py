@@ -92,6 +92,9 @@ def format_fields_prompt(fields: list[dict[str, Any]]) -> str:
         lines.append(
             f"- ID: {f['id']}, name: {f.get('name', '')}, type: {type_info}"
         )
+        prompt = (f.get("prompt") or "").strip()
+        if prompt:
+            lines.append(f"  Extraction guidance: {prompt}")
     lines.append(
         "Return field values by field_id. Do not invent field names. "
         "If there is insufficient evidence, omit the field."

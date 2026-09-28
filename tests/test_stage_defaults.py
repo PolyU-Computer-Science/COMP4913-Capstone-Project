@@ -3,7 +3,7 @@ from __future__ import annotations
 from email_assistant.core.stage_defaults import effective_stage_settings
 
 
-def test_defaults_come_from_yaml() -> None:
+def test_defaults_are_builtin() -> None:
     settings = effective_stage_settings("classification", {})
 
     assert settings["role"] == "Email Classifier"
@@ -14,7 +14,7 @@ def test_defaults_come_from_yaml() -> None:
     assert settings["temperature"] is None
 
 
-def test_overrides_win_over_yaml() -> None:
+def test_overrides_win_over_builtin() -> None:
     settings = effective_stage_settings(
         "classification",
         {
@@ -31,7 +31,7 @@ def test_overrides_win_over_yaml() -> None:
     assert settings["temperature"] == 0.1
 
 
-def test_empty_override_falls_back_to_yaml() -> None:
+def test_empty_override_falls_back_to_builtin() -> None:
     settings = effective_stage_settings(
         "classification", {"role": "", "goal": "", "prompt": ""}
     )
@@ -46,3 +46,4 @@ def test_draft_defaults() -> None:
 
     assert settings["role"] == "Reply Drafter"
     assert settings["prompt"]
+    assert "{knowledge_context}" in settings["prompt"]

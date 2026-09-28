@@ -1,4 +1,4 @@
-"""Structured LLM client (OpenRouter MiMo runtime contract).
+"""Structured LLM client (OpenAI-compatible runtime contract).
 
 A unified path for requesting JSON-structured output from an LLM:
 
@@ -24,8 +24,51 @@ from pydantic import BaseModel, ValidationError
 
 load_dotenv(override=False)
 
-DEFAULT_MODEL = "xiaomi/mimo-v2.5-pro"
-DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
+# All providers below expose an OpenAI-compatible /chat/completions endpoint.
+# Official base URLs and API key env vars per provider documentation:
+# - openrouter: https://openrouter.ai/api/v1            (OPENROUTER_API_KEY)
+# - openai:     https://api.openai.com/v1               (OPENAI_API_KEY)
+# - ollama:     http://localhost:11434/v1               (no key)
+# - deepseek:   https://api.deepseek.com                (DEEPSEEK_API_KEY)
+# - groq:       https://api.groq.com/openai/v1          (GROQ_API_KEY)
+# - mistral:    https://api.mistral.ai/v1               (MISTRAL_API_KEY)
+# - gemini:     https://generativelanguage.googleapis.com/v1beta/openai
+#                                                       (GEMINI_API_KEY)
+# - local:      any OpenAI-compatible server via LLM_BASE_URL (optional key)
+PROVIDER_BASE_URLS: dict[str, str] = {
+    "openrouter": "https://openrouter.ai/api/v1",
+    "openai": "https://api.openai.com/v1",
+    "ollama": "http://localhost:11434/v1",
+    "deepseek": "https://api.deepseek.com",
+    "groq": "https://api.groq.com/openai/v1",
+    "mistral": "https://api.mistral.ai/v1",
+    "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "local": "",
+}
+PROVIDER_API_KEY_ENVS: dict[str, str] = {
+    "openrouter": "OPENROUTER_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "mistral": "MISTRAL_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+    "local": "LOCAL_API_KEY",
+}
+PROVIDERS_REQUIRING_API_KEY = set(PROVIDER_API_KEY_ENVS) - {"ollama", "local"}
+PROVIDER_DEFAULT_MODELS: dict[str, str] = {
+    "openrouter": "xiaomi/mimo-v2.5-pro",
+    "openai": "gpt-4o-mini",
+    "ollama": "qwen2.5:7b",
+    "deepseek": "deepseek-chat",
+    "groq": "llama-3.3-70b-versatile",
+    "mistral": "mistral-small-latest",
+    "gemini": "gemini-2.0-flash",
+    "local": "",
+}
+
+# Constructor fallbacks (overridden per provider by the factory).
+DEFAULT_MODEL = PROVIDER_DEFAULT_MODELS["openrouter"]
+DEFAULT_BASE_URL = PROVIDER_BASE_URLS["openrouter"]
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -104,14 +147,14 @@ def extract_json_object(text: str) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
-class OpenRouterStructuredClient(Generic[T]):
+class OpenAICompatibleStructuredClient(Generic[T]):
     """Requests JSON output from an OpenAI-compatible chat endpoint."""
 
-    provider = "openrouter"
+    provider: str = "openai-compatible"
 
     def __init__(
         self,
-        api_key: str,
+        api_key: str = "",
         model: str = DEFAULT_MODEL,
         base_url: str = DEFAULT_BASE_URL,
         timeout: float = 120.0,
@@ -119,8 +162,10 @@ class OpenRouterStructuredClient(Generic[T]):
         temperature: float = 0.2,
         max_tokens: int = 2000,
         transport: Any = None,
+        provider: str = "openai-compatible",
     ) -> None:
         self.model = model
+        self.provider = provider
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
@@ -134,9 +179,12 @@ class OpenRouterStructuredClient(Generic[T]):
             return self._transport
         import httpx
 
+        headers = {}
+        if self._api_key:
+            headers["Authorization"] = f"Bearer {self._api_key}"
         return httpx.Client(
             base_url=self._base_url,
-            headers={"Authorization": f"Bearer {self._api_key}"},
+            headers=headers,
             timeout=self._timeout,
         )
 
@@ -279,18 +327,55 @@ def _message_content(body: dict) -> str:
     return str(message.get("content") or "")
 
 
-def build_openrouter_structured_client() -> OpenRouterStructuredClient:
-    """Build a structured client from environment variables."""
+def build_structured_client(provider: str = "openrouter") -> OpenAICompatibleStructuredClient:
+    """Build a structured client for the given provider from environment variables.
+
+    API keys are read from the provider's official env var (see
+    ``PROVIDER_API_KEY_ENVS``). Model/base URL can be overridden via
+    ``<PROVIDER>_MODEL`` / ``<PROVIDER>_BASE_URL`` (e.g. ``DEEPSEEK_MODEL``)
+    or the legacy shared ``OPENROUTER_MODEL`` / ``OPENROUTER_BASE_URL``.
+    """
     import os
 
-    api_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
-    model = os.environ.get("OPENROUTER_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
-    base_url = (
-        os.environ.get("OPENROUTER_BASE_URL", DEFAULT_BASE_URL).strip()
-        or DEFAULT_BASE_URL
+    provider = (provider or "").strip().lower()
+    if provider not in PROVIDER_BASE_URLS:
+        raise StructuredLLMError(f"Unknown LLM provider: {provider!r}")
+
+    api_key = ""
+    key_env = PROVIDER_API_KEY_ENVS.get(provider)
+    if key_env:
+        api_key = os.environ.get(key_env, "").strip()
+
+    if provider in PROVIDERS_REQUIRING_API_KEY and not api_key:
+        raise StructuredLLMAuthError(
+            f"LLM_PROVIDER={provider} but {key_env} is not set"
+        )
+
+    provider_upper = provider.upper()
+    # Legacy shared overrides (OPENROUTER_*) only apply to openrouter.
+    legacy_model = (
+        os.environ.get("OPENROUTER_MODEL", "").strip()
+        if provider == "openrouter"
+        else ""
     )
-    if not api_key:
-        raise StructuredLLMAuthError("OPENROUTER_API_KEY is not set")
-    return OpenRouterStructuredClient(
-        api_key=api_key, model=model, base_url=base_url
+    legacy_base_url = (
+        os.environ.get("OPENROUTER_BASE_URL", "").strip()
+        if provider == "openrouter"
+        else ""
+    )
+    model = (
+        os.environ.get(f"{provider_upper}_MODEL", "").strip()
+        or legacy_model
+        or PROVIDER_DEFAULT_MODELS[provider]
+    )
+    base_url = (
+        os.environ.get(f"{provider_upper}_BASE_URL", "").strip()
+        or legacy_base_url
+        or PROVIDER_BASE_URLS[provider]
+    )
+    return OpenAICompatibleStructuredClient(
+        api_key=api_key,
+        model=model,
+        base_url=base_url,
+        provider=provider,
     )

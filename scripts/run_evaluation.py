@@ -43,6 +43,24 @@ EXPERIMENT_FILES = {
 }
 
 
+def _cleanup_previous_run(settings) -> None:
+    """Delete mailboxes/topics/fields/knowledge left by previous runs."""
+    from email_assistant.core.knowledge_indexing import KnowledgeIndexService
+
+    names = {spec["name"] for spec in fixtures.MAILBOXES.values()}
+    for mailbox in settings.list_mailboxes(include_system=False):
+        if mailbox["name"] not in names:
+            continue
+        for source in settings.list_knowledge_sources():
+            KnowledgeIndexService().delete_source_documents(
+                mailbox["id"], source["id"]
+            )
+        settings.delete_mailbox(int(mailbox["id"]))
+    for source in settings.list_knowledge_sources():
+        if source["name"] in fixtures._source_titles():
+            settings.delete_knowledge_source(int(source["id"]))
+
+
 def seed_mailbox(settings, mailbox_spec: dict) -> dict:
     mailbox = settings.create_mailbox(
         {"name": mailbox_spec["name"], "address": mailbox_spec["address"]}
@@ -91,21 +109,22 @@ def main() -> None:
 
     from email_assistant.core.knowledge_indexing import KnowledgeIndexService
     from email_assistant.core.knowledge_retrieval import KnowledgeRetriever
-    from email_assistant.core.openrouter_embeddings import OpenRouterEmbeddingClient
+    from email_assistant.core.openai_embeddings import OpenAICompatibleEmbeddingClient
     from email_assistant.core.settings_store import SettingsStore
     from email_assistant.core.structured_classification import StructuredClassifier
-    from email_assistant.core.structured_llm import OpenRouterStructuredClient
+    from email_assistant.core.structured_llm import OpenAICompatibleStructuredClient
 
     api_key = os.environ["OPENROUTER_API_KEY"]
     experiments = set(args.experiments.split(","))
 
     settings = SettingsStore()
-    embedding = OpenRouterEmbeddingClient(api_key=api_key, model="qwen/qwen3-embedding-8b")
-    llm = OpenRouterStructuredClient(
+    embedding = OpenAICompatibleEmbeddingClient(api_key=api_key, model="qwen/qwen3-embedding-8b")
+    llm = OpenAICompatibleStructuredClient(
         api_key=api_key, model="xiaomi/mimo-v2.5-pro", max_retries=1
     )
 
-    # Seed mailboxes.
+    # Remove leftovers from previous runs, then seed mailboxes.
+    _cleanup_previous_run(settings)
     support = seed_mailbox(settings, fixtures.MAILBOXES["support"])
     sales = seed_mailbox(settings, fixtures.MAILBOXES["sales"])
 

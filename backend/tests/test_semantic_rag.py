@@ -17,8 +17,8 @@ from email_assistant.core.embeddings import (
 from email_assistant.core.knowledge_indexing import KnowledgeIndexService
 from email_assistant.core.knowledge_retrieval import KnowledgeRetriever, RetrievalStats
 from email_assistant.core.knowledge_store import KnowledgeStore
-from email_assistant.core.openrouter_embeddings import (
-    OpenRouterEmbeddingClient,
+from email_assistant.core.openai_embeddings import (
+    OpenAICompatibleEmbeddingClient,
 )
 
 client = TestClient(app)
@@ -56,9 +56,12 @@ class _FakeResponse:
         return self._json
 
 
-def _openrouter_client(dim: int = 8) -> OpenRouterEmbeddingClient:
-    return OpenRouterEmbeddingClient(
-        api_key="test", model="qwen/qwen3-embedding-8b", transport=_FakeTransport(dim)
+def _embedding_client(dim: int = 8) -> OpenAICompatibleEmbeddingClient:
+    return OpenAICompatibleEmbeddingClient(
+        api_key="test",
+        model="qwen/qwen3-embedding-8b",
+        transport=_FakeTransport(dim),
+        provider="openrouter",
     )
 
 
@@ -104,7 +107,7 @@ def _make_mailbox_with_index(name: str, content: str, embedding_client) -> int:
 
 
 def test_semantic_index_persists_identity() -> None:
-    client = _openrouter_client(dim=12)
+    client = _embedding_client(dim=12)
     mailbox_id = _make_mailbox_with_index("Support", "Refunds accepted within 30 days.", client)
 
     docs = KnowledgeStore().list_documents(mailbox_id)
@@ -117,7 +120,7 @@ def test_semantic_index_persists_identity() -> None:
 
 
 def test_semantic_retrieval_uses_identity() -> None:
-    client = _openrouter_client(dim=12)
+    client = _embedding_client(dim=12)
     mailbox_id = _make_mailbox_with_index("Support", "Refunds accepted within 30 days.", client)
 
     retriever = KnowledgeRetriever(embedding_client=client)
@@ -135,7 +138,7 @@ def test_retrieval_stats_reflect_stale_skipped() -> None:
     mailbox_id = _make_mailbox_with_index(
         "Support", "Refunds accepted within 30 days.", hashing_client
     )
-    openrouter = _openrouter_client(dim=8)
+    openrouter = _embedding_client(dim=8)
     retriever = KnowledgeRetriever(embedding_client=openrouter)
     results, stats = retriever.search_detailed(mailbox_id, "refund")
     assert results == []
@@ -146,7 +149,7 @@ def test_retrieval_stats_reflect_stale_skipped() -> None:
 # ---- retrieval isolation ----
 
 def test_support_never_retrieves_sales_knowledge() -> None:
-    client = _openrouter_client(dim=8)
+    client = _embedding_client(dim=8)
     support_id = _make_mailbox_with_index(
         "Support", "Refund requests accepted within 30 days.", client
     )

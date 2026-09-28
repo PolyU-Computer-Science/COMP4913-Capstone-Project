@@ -96,6 +96,14 @@ KNOWLEDGE = {
 }
 
 # MCP connector for the MTR mailbox (used by tool_planning + safety datasets).
+def _source_titles() -> set[str]:
+    return {
+        source["title"]
+        for sources in KNOWLEDGE.values()
+        for source in sources
+    }
+
+
 MTR_CONNECTOR = {
     "id": "mtr",
     "name": "MTR Hong Kong",

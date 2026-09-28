@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -41,23 +42,23 @@ import {
 import type { CustomField, CustomFieldIn } from '@/lib/types'
 import { toast } from 'sonner'
 
-const SYSTEM_FIELDS = [
-  'Status',
-  'Priority',
-  'Category',
-  'Topic',
-  'Urgency',
-  'Requires Reply',
-]
+const SYSTEM_FIELDS = ['Status', 'Category', 'Priority', 'Urgency']
 
 interface FormState {
   name: string
   type: string
   required: boolean
   options: string
+  prompt: string
 }
 
-const EMPTY: FormState = { name: '', type: 'text', required: false, options: '' }
+const EMPTY: FormState = {
+  name: '',
+  type: 'text',
+  required: false,
+  options: '',
+  prompt: '',
+}
 
 export function FieldsTab({ mailboxId }: { mailboxId: number }) {
   const queryClient = useQueryClient()
@@ -106,6 +107,7 @@ export function FieldsTab({ mailboxId }: { mailboxId: number }) {
       type: field.type,
       required: field.required,
       options: field.options,
+      prompt: field.prompt,
     })
     setDialogOpen(true)
   }
@@ -235,6 +237,18 @@ export function FieldsTab({ mailboxId }: { mailboxId: number }) {
                 />
               </div>
             )}
+            <div className="flex flex-col gap-1.5">
+              <Label>Prompt Hint</Label>
+              <Textarea
+                rows={3}
+                value={form.prompt}
+                onChange={(e) => setForm((p) => ({ ...p, prompt: e.target.value }))}
+                placeholder="Extraction guidance, e.g. the order number found in the email body, format ORD-12345."
+              />
+              <p className="text-xs text-muted-foreground">
+                Injected into the AI prompt when extracting this field.
+              </p>
+            </div>
             <div className="flex items-center gap-2">
               <Switch
                 checked={form.required}

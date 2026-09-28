@@ -193,7 +193,6 @@ class SettingsStore:
                 mailbox_id INTEGER NOT NULL,
                 name TEXT NOT NULL,
                 description TEXT DEFAULT '',
-                examples TEXT DEFAULT '',
                 status TEXT DEFAULT 'active'
             )
             """
@@ -207,10 +206,15 @@ class SettingsStore:
                 type TEXT DEFAULT 'text',
                 required INTEGER DEFAULT 0,
                 options TEXT DEFAULT '',
+                prompt TEXT DEFAULT '',
                 status TEXT DEFAULT 'active'
             )
             """
         )
+        try:
+            conn.execute("ALTER TABLE custom_fields ADD COLUMN prompt TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS knowledge_sources (
@@ -514,6 +518,35 @@ class SettingsStore:
 
     # ---- stage settings ----
 
+    def ensure_default_stage_settings(self) -> bool:
+        """Seed built-in stage defaults into the DB once.
+
+        Returns True if seeding happened. Never overwrites existing
+        stage settings — user edits always win.
+        """
+        from email_assistant.core.stage_seeds import STAGE_SEEDS
+
+        with self._lock:
+            conn = self._connect()
+            try:
+                count = conn.execute(
+                    "SELECT COUNT(*) FROM settings WHERE key LIKE 'stage.%'"
+                ).fetchone()[0]
+                if count > 0:
+                    return False
+                for stage, defaults in STAGE_SEEDS.items():
+                    for field in ("role", "goal", "backstory", "prompt"):
+                        value = defaults.get(field) or ""
+                        if value:
+                            conn.execute(
+                                "INSERT OR REPLACE INTO settings (key, value) "
+                                "VALUES (?, ?)",
+                                (f"stage.{stage}.{field}", value),
+                            )
+                conn.commit()
+                return True
+            finally:
+                conn.close()
     def get_stage_settings(self, stage: str) -> dict[str, Any]:
         with self._lock:
             conn = self._connect()
@@ -794,6 +827,36 @@ class SettingsStore:
                 conn.close()
         return self._mailbox_row_to_dict(row) if row is not None else None
 
+    def ensure_default_mailbox(self) -> bool:
+        """Seed the built-in default mailbox (topics + fields) once.
+
+        Runs only when the mailboxes table is empty — never overwrites
+        existing mailboxes. The password is NOT seeded; it must be set
+        via the UI. Returns True if seeding happened.
+        """
+        from email_assistant.core.mailbox_seeds import (
+            FIELD_SEEDS,
+            MAILBOX_SEED,
+            TOPIC_SEEDS,
+        )
+
+        with self._lock:
+            conn = self._connect()
+            try:
+                count = conn.execute("SELECT COUNT(*) FROM mailboxes").fetchone()[0]
+            finally:
+                conn.close()
+        if count > 0:
+            return False
+
+        mailbox = self.create_mailbox(MAILBOX_SEED)
+        mailbox_id = int(mailbox["id"])
+        for topic in TOPIC_SEEDS:
+            self.create_topic(mailbox_id, {**topic, "status": "active"})
+        for field in FIELD_SEEDS:
+            self.create_custom_field(mailbox_id, {**field, "required": False, "status": "active"})
+        return True
+
     def create_mailbox(self, data: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
             conn = self._connect()
@@ -981,7 +1044,6 @@ class SettingsStore:
         for row in rows:
             topic = dict(row)
             topic["status"] = topic.get("status") or "active"
-            topic["examples"] = topic.get("examples") or ""
             topics.append(topic)
         return topics
 
@@ -991,14 +1053,13 @@ class SettingsStore:
             try:
                 cur = conn.execute(
                     """
-                    INSERT INTO topics (mailbox_id, name, description, examples, status)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO topics (mailbox_id, name, description, status)
+                    VALUES (?, ?, ?, ?)
                     """,
                     (
                         mailbox_id,
                         str(data.get("name", "")),
                         str(data.get("description", "")),
-                        str(data.get("examples", "")),
                         str(data.get("status", "active")),
                     ),
                 )
@@ -1021,7 +1082,6 @@ class SettingsStore:
             return None
         topic = dict(row)
         topic["status"] = topic.get("status") or "active"
-        topic["examples"] = topic.get("examples") or ""
         return topic
 
     def update_topic(self, topic_id: int, data: dict[str, Any]) -> dict[str, Any] | None:
@@ -1034,14 +1094,12 @@ class SettingsStore:
             try:
                 conn.execute(
                     """
-                    UPDATE topics SET name = ?, description = ?, examples = ?,
-                        status = ?
+                    UPDATE topics SET name = ?, description = ?, status = ?
                     WHERE id = ?
                     """,
                     (
                         str(merged.get("name", "")),
                         str(merged.get("description", "")),
-                        str(merged.get("examples", "")),
                         str(merged.get("status", "active")),
                         topic_id,
                     ),
@@ -1080,6 +1138,7 @@ class SettingsStore:
             field["required"] = bool(field.get("required"))
             field["status"] = field.get("status") or "active"
             field["options"] = field.get("options") or ""
+            field["prompt"] = field.get("prompt") or ""
             fields.append(field)
         return fields
 
@@ -1092,8 +1151,8 @@ class SettingsStore:
                 cur = conn.execute(
                     """
                     INSERT INTO custom_fields
-                        (mailbox_id, name, type, required, options, status)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                        (mailbox_id, name, type, required, options, prompt, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         mailbox_id,
@@ -1101,6 +1160,7 @@ class SettingsStore:
                         str(data.get("type", "text")),
                         1 if data.get("required") else 0,
                         str(data.get("options", "")),
+                        str(data.get("prompt", "")),
                         str(data.get("status", "active")),
                     ),
                 )
@@ -1126,6 +1186,7 @@ class SettingsStore:
         field["required"] = bool(field.get("required"))
         field["status"] = field.get("status") or "active"
         field["options"] = field.get("options") or ""
+        field["prompt"] = field.get("prompt") or ""
         return field
 
     def update_custom_field(
@@ -1141,7 +1202,7 @@ class SettingsStore:
                 conn.execute(
                     """
                     UPDATE custom_fields SET name = ?, type = ?, required = ?,
-                        options = ?, status = ?
+                        options = ?, prompt = ?, status = ?
                     WHERE id = ?
                     """,
                     (
@@ -1149,6 +1210,7 @@ class SettingsStore:
                         str(merged.get("type", "text")),
                         1 if merged.get("required") else 0,
                         str(merged.get("options", "")),
+                        str(merged.get("prompt", "")),
                         str(merged.get("status", "active")),
                         field_id,
                     ),

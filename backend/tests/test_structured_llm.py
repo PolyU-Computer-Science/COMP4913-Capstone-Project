@@ -9,7 +9,7 @@ from email_assistant.core.structured_classification import (
     StructuredClassifier,
 )
 from email_assistant.core.structured_llm import (
-    OpenRouterStructuredClient,
+    OpenAICompatibleStructuredClient,
     StructuredLLMAuthError,
     StructuredLLMPaymentError,
     StructuredLLMRateLimitError,
@@ -50,9 +50,13 @@ class _FakeTransport:
         return self.handler(json)
 
 
-def _client(transport, max_retries=1) -> OpenRouterStructuredClient:
-    return OpenRouterStructuredClient(
-        api_key="k", model="xiaomi/mimo-v2.5-pro", transport=transport, max_retries=max_retries
+def _client(transport, max_retries=1) -> OpenAICompatibleStructuredClient:
+    return OpenAICompatibleStructuredClient(
+        api_key="k",
+        model="xiaomi/mimo-v2.5-pro",
+        transport=transport,
+        max_retries=max_retries,
+        provider="openrouter",
     )
 
 

@@ -18,7 +18,7 @@ from email_assistant.core.mcp_transport import (
 from email_assistant.core.observability_store import ObservabilityStore
 from email_assistant.core.settings_store import SettingsStore
 from email_assistant.core.structured_classification import ClassificationContract
-from email_assistant.core.structured_llm import OpenRouterStructuredClient
+from email_assistant.core.structured_llm import OpenAICompatibleStructuredClient
 from email_assistant.core.tool_executor import ToolExecutionGateway
 from email_assistant.core.tool_planner import ActionProposal, ToolPlanner
 from email_assistant.core.tool_permissions import default_risk_level
@@ -153,7 +153,7 @@ def test_planner_produces_action_proposal() -> None:
             },
         )
     )
-    llm = OpenRouterStructuredClient(api_key="k", transport=transport)
+    llm = OpenAICompatibleStructuredClient(api_key="k", transport=transport)
     planner = ToolPlanner(llm)
 
     allowed = [{"connector_id": 3, "name": "mtr_next_trains", "description": "next trains"}]

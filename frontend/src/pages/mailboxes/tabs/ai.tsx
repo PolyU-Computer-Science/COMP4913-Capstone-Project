@@ -223,6 +223,8 @@ function ModelSelect({
   configs: { id: number; name: string; model: string }[]
   onChange: (id: number | null) => void
 }) {
+  const selected = configs.find((config) => config.id === value)
+
   return (
     <Field label={label}>
       <Select
@@ -230,7 +232,9 @@ function ModelSelect({
         onValueChange={(v) => onChange(v ? Number(v) : null)}
       >
         <SelectTrigger className="w-full">
-          <SelectValue placeholder="Select a model…" />
+          <SelectValue placeholder="Select a model…">
+            {selected ? `${selected.name} · ${selected.model}` : undefined}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent>
           {configs.map((config) => (

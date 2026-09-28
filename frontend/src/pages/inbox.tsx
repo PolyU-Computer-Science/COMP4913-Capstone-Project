@@ -149,7 +149,7 @@ export default function Inbox() {
 
   if (emails.length === 0) {
     return (
-      <div className="flex min-h-0 flex-col overflow-y-auto">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:p-6">
         <PageHeader
           title="Inbox"
           description="Read and process incoming emails."
