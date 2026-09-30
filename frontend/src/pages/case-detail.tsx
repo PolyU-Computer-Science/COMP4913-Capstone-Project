@@ -113,12 +113,6 @@ export default function CaseDetailPage() {
             #{caseItem.id.slice(0, 6).toUpperCase()}
           </span>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <StatusBadge status={sent ? 'sent' : 'draft'} />
-          <Badge variant="outline" className="capitalize">
-            {caseItem.classification.priority}
-          </Badge>
-        </div>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col">
