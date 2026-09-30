@@ -13,7 +13,7 @@ Base URL: `http://localhost:8000/api`
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/emails?mailbox_id=` | List stored emails (optionally mailbox-scoped) |
-| POST | `/emails/sync` | Fetch unread emails via IMAP (body `{mailbox_id}` optional) |
+| POST | `/emails/sync` | Fetch emails (all, read + unread, newest first) via IMAP. With `{mailbox_id}`: sync that mailbox only; without: sync every configured mailbox |
 | POST | `/emails/process-all?mailbox_id=` | Queue-process all pending emails |
 | POST | `/emails/{id}/process` | Run the AI pipeline (classify + retrieve + draft) on an email |
 | GET | `/emails/{id}/attachments/{cid}` | Serve an inline attachment |
@@ -34,7 +34,7 @@ Base URL: `http://localhost:8000/api`
 | --- | --- | --- |
 | GET/POST | `/mailboxes` | List / create mailboxes |
 | GET/PUT/DELETE | `/mailboxes/{id}` | Get / update / delete a mailbox |
-| POST | `/mailboxes/{id}/test` | Test the mailbox's IMAP connection |
+| POST | `/mailboxes/{id}/test` | Test the mailbox's IMAP connection (login + folder select + NOOP only — no emails are fetched) |
 
 ### Topics
 
@@ -79,8 +79,9 @@ Base URL: `http://localhost:8000/api`
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/mailboxes/{id}/processing-runs` | Processing runs (latency, tokens, status) |
-| GET | `/mailboxes/{id}/processing-stats` | Aggregate stats (success rate, avg latency, tokens) |
+| GET | `/mailboxes/{id}/processing-traces` | Recent per-email traces: runs grouped by `trace_id` with email subject, stages, status, latency, tokens |
+| GET | `/mailboxes/{id}/processing-runs` | Raw processing runs (latency, tokens, status) |
+| GET | `/mailboxes/{id}/processing-stats` | Aggregate stats (success rate, avg latency, tokens); counts **emails** (distinct traces), not runs |
 | GET | `/mailboxes/{id}/tool-audit` | MCP tool invocation audit log |
 
 ## Settings
