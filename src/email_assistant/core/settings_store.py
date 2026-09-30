@@ -838,6 +838,7 @@ class SettingsStore:
             FIELD_SEEDS,
             MAILBOX_SEED,
             TOPIC_SEEDS,
+            _env_password,
         )
 
         with self._lock:
@@ -851,6 +852,9 @@ class SettingsStore:
 
         mailbox = self.create_mailbox(MAILBOX_SEED)
         mailbox_id = int(mailbox["id"])
+        password = _env_password()
+        if password:
+            self.set_mailbox_password(mailbox_id, password)
         for topic in TOPIC_SEEDS:
             self.create_topic(mailbox_id, {**topic, "status": "active"})
         for field in FIELD_SEEDS:

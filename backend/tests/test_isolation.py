@@ -200,19 +200,11 @@ def test_process_all_is_scoped_to_mailbox(monkeypatch) -> None:
 
 
 def test_legacy_backfill_migrates_null_mailbox_emails(monkeypatch) -> None:
-    import email_assistant.core
     from email_assistant.core.migrations import migrate_legacy_emails
 
-    # Seed via legacy path (no mailbox_id) so the email has NULL mailbox_id.
-    monkeypatch.setattr(
-        email_assistant.core,
-        "fetch_emails",
-        lambda: [SUPPORT_EMAIL],
-    )
-    client.post("/api/emails/sync")
-
-    emails = client.get("/api/emails").json()["emails"]
-    assert emails[0]["mailbox_id"] is None
+    # Seed via the store without mailbox_id — writes a NULL mailbox_id row
+    # (simulating pre-mailbox-scoping data).
+    store.sync_emails([dict(SUPPORT_EMAIL)])
 
     migrated = migrate_legacy_emails()
     assert migrated == 1
@@ -228,10 +220,7 @@ def test_legacy_mailbox_is_system_and_hidden(monkeypatch) -> None:
     import email_assistant.core
     from email_assistant.core.migrations import migrate_legacy_emails
 
-    monkeypatch.setattr(
-        email_assistant.core, "fetch_emails", lambda: [SUPPORT_EMAIL]
-    )
-    client.post("/api/emails/sync")
+    store.sync_emails([dict(SUPPORT_EMAIL)])
     migrate_legacy_emails()
 
     # A real mailbox is visible; the Legacy system mailbox is hidden by default.

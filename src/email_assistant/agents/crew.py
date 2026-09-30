@@ -90,7 +90,6 @@ class EmailAssistant:
             ),
             agent=self.drafter(),
             context=[self.classify_email_task()],
-            output_file="draft_reply.txt",
         )
 
     def crew(self) -> Crew:

@@ -39,6 +39,37 @@ def _extract_json_object(text: str) -> dict | None:
     return _extract_json(text[start : end + 1])
 
 
+def _extract_balanced_braces(text: str, start: int) -> str | None:
+    """Extract a ``{...}`` substring starting at ``start`` with brace balancing."""
+    depth = 0
+    for index in range(start, len(text)):
+        char = text[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : index + 1]
+    return None
+
+
+def _extract_custom_dict(text: str) -> dict:
+    """Extract the ``custom={...}`` (or ``custom_fields={...}``) dict."""
+    import ast
+
+    match = re.search(r"\bcustom(?:_fields?)?\s*=\s*", text)
+    if not match:
+        return {}
+    raw = _extract_balanced_braces(text, match.end())
+    if not raw:
+        return {}
+    try:
+        value = ast.literal_eval(raw)
+    except (ValueError, SyntaxError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
 def _extract_python_literal(text: str) -> dict | None:
     def string_field(name: str) -> str | None:
         match = re.search(name + r"\s*=\s*'([^']*)'", text)
@@ -62,7 +93,7 @@ def _extract_python_literal(text: str) -> dict | None:
         "priority": priority or "normal",
         "urgency_score": int_field("urgency_score") or 0,
         "summary": summary or "",
-        "custom": {},
+        "custom": _extract_custom_dict(text),
     }
 
 

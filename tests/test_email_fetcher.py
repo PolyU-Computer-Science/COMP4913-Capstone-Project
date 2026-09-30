@@ -94,7 +94,7 @@ def test_fetch_via_imap_fetches_all_emails(monkeypatch) -> None:
 
     # No criteria argument = IMAP ALL (read + unread), only a limit.
     assert _FakeMailBox.last_fetch_args == ()
-    assert _FakeMailBox.last_fetch_kwargs == {"limit": 50}
+    assert _FakeMailBox.last_fetch_kwargs == {"limit": 50, "reverse": True}
 
 
 def test_fetch_via_imap_respects_max_emails(monkeypatch) -> None:
@@ -104,7 +104,7 @@ def test_fetch_via_imap_respects_max_emails(monkeypatch) -> None:
 
     fetch_via_imap(EmailSettings(enabled=True, address="a@b.com", max_emails=7))
 
-    assert _FakeMailBox.last_fetch_kwargs == {"limit": 7}
+    assert _FakeMailBox.last_fetch_kwargs == {"limit": 7, "reverse": True}
 
 
 def test_env_folder_is_fixed_to_inbox() -> None:

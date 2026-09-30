@@ -124,14 +124,14 @@ def fetch_via_imap(settings: EmailSettings) -> list[dict[str, str]]:
         settings.password,
         initial_folder=settings.folder,
     ) as mailbox:
-        # No criteria = IMAP ALL (read + unread)
-        messages = list(mailbox.fetch(limit=settings.max_emails))
+        # No criteria = IMAP ALL (read + unread); reverse=True = newest first.
+        messages = list(mailbox.fetch(limit=settings.max_emails, reverse=True))
 
         if not messages:
             print("No emails found.")
             return []
 
-        print(f"Found {len(messages)} email(s).")
+        print(f"Found {len(messages)} email(s) (newest first).")
 
         emails = []
         for msg in messages:

@@ -137,9 +137,12 @@ def test_imap_failure_returns_502(monkeypatch) -> None:
     monkeypatch.setattr(
         email_assistant.core,
         "fetch_emails",
-        lambda: (_ for _ in ()).throw(RuntimeError("IMAP down")),
+        lambda mb_id=None: (_ for _ in ()).throw(RuntimeError("IMAP down")),
     )
-    response = client.post("/api/emails/sync")
+    mailbox_id = client.post(
+        "/api/mailboxes", json={"name": "Support", "address": "s@x.com"}
+    ).json()["id"]
+    response = client.post("/api/emails/sync", json={"mailbox_id": mailbox_id})
     assert response.status_code == 502
 
 

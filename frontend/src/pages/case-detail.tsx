@@ -163,7 +163,7 @@ export default function CaseDetailPage() {
             </ResizablePanel>
             <ResizableHandle withHandle />
             <ResizablePanel defaultSize={30} minSize={25} className="min-w-[280px]">
-              <div className="h-full">{contextPanel}</div>
+              <div className="h-full pl-1">{contextPanel}</div>
             </ResizablePanel>
           </ResizablePanelGroup>
         )}
@@ -188,7 +188,7 @@ function ContextPanel({
   onTabChange: (value: string) => void
 }) {
   return (
-    <div className="flex min-h-0 flex-col border-l">
+    <div className="flex min-h-0 flex-col">
       <Tabs value={tab} onValueChange={(v) => onTabChange(v ?? 'details')}>
         <TabsList variant="line" className="w-full">
           <TabsTrigger value="details" className="flex-1">

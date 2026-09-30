@@ -53,7 +53,12 @@ def test_mailbox_password_not_leaked() -> None:
     )
     body = created.json()
     assert "password" not in body
-    assert body["has_password"] is False
+    # The raw password must never be returned; only the has_password flag.
+    assert body["has_password"] is True
+
+    # A mailbox created without a password reports has_password=False.
+    bare = client.post("/api/mailboxes", json=_mailbox()).json()
+    assert bare["has_password"] is False
 
 
 def test_mailbox_password_encrypted_at_rest(tmp_path) -> None:

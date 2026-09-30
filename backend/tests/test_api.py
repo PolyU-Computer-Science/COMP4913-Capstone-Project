@@ -41,14 +41,22 @@ def _reset_store() -> None:
     store.clear()
 
 
-def _sync_sample(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """Sync one sample email and return its id."""
+def _sync_sample(monkeypatch: pytest.MonkeyPatch, mailbox_id: int = 1) -> list[str]:
+    """Create a mailbox, sync one sample email into it, return the id."""
     import email_assistant.core
 
+    mailbox_id = client.post(
+        "/api/mailboxes", json={"name": "Support", "address": "s@x.com"}
+    ).json()["id"]
+
     monkeypatch.setattr(
-        email_assistant.core, "fetch_emails", lambda: [SAMPLE_EMAIL]
+        email_assistant.core,
+        "fetch_emails",
+        lambda mb_id=None: [SAMPLE_EMAIL] if mb_id == mailbox_id else [],
     )
-    response = client.post("/api/emails/sync")
+    response = client.post(
+        "/api/emails/sync", json={"mailbox_id": mailbox_id}
+    )
     assert response.status_code == 200
     return [email["id"] for email in response.json()["emails"]]
 
@@ -130,14 +138,14 @@ def test_process_all_processes_pending_emails(
     monkeypatch.setattr(
         email_assistant.core,
         "fetch_emails",
-        lambda: [
+        lambda mb_id=None: [
             {
                 "sender": "bob@example.com",
                 "subject": "Second email",
                 "body": "Another question",
                 "timestamp": "2026-07-29T10:00:00Z",
             }
-        ],
+        ] if mb_id else [],
     )
     client.post("/api/emails/sync")
 
@@ -169,14 +177,14 @@ def test_process_all_continues_after_failure(
     monkeypatch.setattr(
         email_assistant.core,
         "fetch_emails",
-        lambda: [
+        lambda mb_id=None: [
             {
                 "sender": "bob@example.com",
                 "subject": "Second email",
                 "body": "Another question",
                 "timestamp": "2026-07-29T10:00:00Z",
             }
-        ],
+        ] if mb_id else [],
     )
     client.post("/api/emails/sync")
 
@@ -238,10 +246,13 @@ def test_stats_empty_store() -> None:
 def test_get_attachment_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     import email_assistant.core
 
+    mailbox_id = client.post(
+        "/api/mailboxes", json={"name": "Support", "address": "s@x.com"}
+    ).json()["id"]
     monkeypatch.setattr(
         email_assistant.core,
         "fetch_emails",
-        lambda: [
+        lambda mb_id=None: [
             {
                 "sender": "sarah.chen@example.com",
                 "subject": "With image",
@@ -260,7 +271,9 @@ def test_get_attachment_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
         ],
     )
 
-    response = client.post("/api/emails/sync")
+    response = client.post(
+        "/api/emails/sync", json={"mailbox_id": mailbox_id}
+    )
     assert response.status_code == 200
     email_id = response.json()["emails"][0]["id"]
     assert response.json()["emails"][0]["html"] == '<img src="cid:logo">'

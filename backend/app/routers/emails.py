@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from email_assistant.core.observability import Observer
+from email_assistant.core.settings_store import SettingsStore
 
 from backend.app.schemas import (
     CaseOut,
@@ -36,25 +37,36 @@ def list_emails(
 
 @router.post("/sync", response_model=SyncResponse)
 def sync_emails(payload: SyncIn | None = None) -> SyncResponse:
-    """Fetch unread emails (IMAP) and persist them (deduped)."""
+    """Fetch emails via IMAP and persist them (deduped).
+
+    With ``mailbox_id``: sync that mailbox only. Without: sync every
+    configured mailbox (the legacy unscoped env fallback no longer applies —
+    emails always belong to a mailbox).
+    """
     from email_assistant.core import fetch_emails
 
     mailbox_id = payload.mailbox_id if payload else None
+    target_mailboxes: list[int]
+    if mailbox_id is not None:
+        target_mailboxes = [mailbox_id]
+    else:
+        target_mailboxes = [
+            m["id"] for m in SettingsStore().list_mailboxes(include_system=False)
+        ]
+
     observer = Observer()
-    try:
-        with observer.run(
-            stage="email_fetch",
-            mailbox_id=mailbox_id,
-        ):
-            if mailbox_id is None:
-                raw_emails = fetch_emails()
-            else:
-                raw_emails = fetch_emails(mailbox_id)
-    except Exception as error:  # noqa: BLE001 - surface IMAP failures to the UI
-        print(f"IMAP fetch failed: {error}")
-        raise HTTPException(
-            status_code=502, detail=f"IMAP fetch failed: {error}"
-        ) from error
+    raw_emails: list[dict[str, str]] = []
+    fetch_errors: list[str] = []
+    for mb_id in target_mailboxes:
+        try:
+            with observer.run(stage="email_fetch", mailbox_id=mb_id):
+                raw_emails.extend(fetch_emails(mb_id))
+        except Exception as error:  # noqa: BLE001 - surface IMAP failures to the UI
+            print(f"IMAP fetch failed for mailbox {mb_id}: {error}")
+            fetch_errors.append(str(error))
+
+    if fetch_errors and not raw_emails and len(target_mailboxes) == 1:
+        raise HTTPException(status_code=502, detail=f"IMAP fetch failed: {fetch_errors[0]}")
 
     added, emails = store.sync_emails(raw_emails, mailbox_id)
     return SyncResponse(synced=added, emails=emails, count=len(emails))

@@ -34,7 +34,11 @@ def _store() -> SettingsStore:
 
 
 def _mailbox_out(data: dict) -> MailboxOut:
-    return MailboxOut(**{**data, "has_password": False})
+    mailbox_id = data.get("id")
+    has_password = bool(
+        mailbox_id is not None and _store().get_mailbox_password(int(mailbox_id))
+    )
+    return MailboxOut(**{**data, "has_password": has_password})
 
 
 def _require_mailbox(mailbox_id: int) -> None:
@@ -149,8 +153,9 @@ def delete_mailbox(mailbox_id: int) -> dict:
 
 @router.post("/{mailbox_id}/test", response_model=TestResult)
 def test_mailbox(mailbox_id: int) -> TestResult:
-    """Test the mailbox's IMAP connection."""
-    from email_assistant.core.email_fetcher import EmailSettings, fetch_via_imap
+    """Test the mailbox's IMAP connection (login + folder select only)."""
+    from email_assistant.core.email_fetcher import EmailSettings
+    from imap_tools import MailBox
 
     mailbox = _store().get_mailbox(mailbox_id)
     if mailbox is None:
@@ -169,19 +174,21 @@ def test_mailbox(mailbox_id: int) -> TestResult:
             "an App Password) and save before testing.",
         )
 
-    settings = EmailSettings(
-        enabled=True,
-        server=str(mailbox.get("imap_host") or ""),
-        port=int(mailbox.get("imap_port") or 993),
-        address=str(mailbox.get("address") or ""),
-        password=password,
-        folder=str(mailbox.get("imap_folder") or "INBOX"),
-        max_emails=int(mailbox.get("max_emails") or 50),
-    )
+    server = str(mailbox.get("imap_host") or "")
+    port = int(mailbox.get("imap_port") or 993)
+    folder = str(mailbox.get("imap_folder") or "INBOX")
 
     try:
-        fetch_via_imap(settings)
-        return TestResult(ok=True, message="IMAP connection successful")
+        with MailBox(server, port=port).login(
+            str(mailbox.get("address") or ""),
+            password,
+            initial_folder=folder,
+        ) as imap:
+            imap.client.noop()
+        return TestResult(
+            ok=True,
+            message=f"IMAP connection to {server}:{port} ({folder}) successful",
+        )
     except Exception as error:  # noqa: BLE001 - surface to the UI
         raw = str(error)
         lowered = raw.lower()
@@ -194,13 +201,13 @@ def test_mailbox(mailbox_id: int) -> TestResult:
         if "name or service not known" in lowered or "getaddrinfo" in lowered:
             return TestResult(
                 ok=False,
-                message=f"Cannot reach IMAP server '{mailbox.get('imap_host')}'. "
+                message=f"Cannot reach IMAP server '{server}'. "
                 "Check the server name and your network.",
             )
         if "timed out" in lowered:
             return TestResult(
                 ok=False,
-                message=f"Connection to '{mailbox.get('imap_host')}' timed out.",
+                message=f"Connection to '{server}' timed out.",
             )
         return TestResult(ok=False, message=raw)
 

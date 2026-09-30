@@ -3,12 +3,20 @@
 Seeds one mailbox from the developer's Gmail configuration plus a
 study/work-oriented topic & field template, so a fresh database is usable
 without manual re-entry. Seed-once: never runs when any mailbox exists.
-The IMAP/SMTP password is NOT seeded — it must be entered in the UI.
+
+The IMAP/SMTP password is seeded from ``EMAIL_PASSWORD`` (the env fallback
+configured in ``.env``) when available; otherwise it must be entered in the
+UI once.
 """
 
 from __future__ import annotations
 
+import os
 from typing import Any
+
+def _env_password() -> str:
+    return os.environ.get("EMAIL_PASSWORD", "").strip()
+
 
 MAILBOX_SEED: dict[str, Any] = {
     "name": "Ken Cheng",
