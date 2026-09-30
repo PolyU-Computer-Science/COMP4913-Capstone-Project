@@ -210,6 +210,16 @@ function ContextPanel({
                 <Row label="Status">
                   <StatusBadge status={caseItem.sent_at !== null ? 'sent' : 'draft'} />
                 </Row>
+                <Row label="Category">
+                  <CategoryBadge category={caseItem.classification.category} />
+                </Row>
+                <Row label="Topic">
+                  {caseItem.classification.topic ? (
+                    <Badge variant="outline">{caseItem.classification.topic}</Badge>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">—</span>
+                  )}
+                </Row>
                 <Row label="Priority">
                   <span className="capitalize">{caseItem.classification.priority}</span>
                 </Row>
