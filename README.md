@@ -675,6 +675,8 @@ email_assistant/
 │   │       ├── mailboxes.py        # Mailboxes / topics / fields / knowledge / connectors
 │   │       ├── knowledge.py        # Knowledge indexing + retrieval endpoints
 │   │       ├── connectors.py       # MCP discovery / permissions / audit
+│   │       ├── teams.py            # Teams / agents / membership (planned, Sprint 9)
+│   │       ├── routing.py          # Routing rules (planned, Sprint 9)
 │   │       ├── observability.py    # Processing runs, per-email traces + stats
 │   │       ├── stats.py            # Dashboard statistics
 │   │       └── settings.py         # AI configs / stage settings / mail accounts CRUD
@@ -690,7 +692,9 @@ email_assistant/
 │           ├── dashboard.tsx       # Stats + category chart + recent activity
 │           ├── inbox.tsx           # Email list (master-detail), sync, AI process
 │           ├── cases.tsx           # Cases table (Category + Topic columns) + merged Details panel
-│           ├── mailboxes/          # Mailbox detail tabs (overview / connection / processing / topics / fields / knowledge / connectors / activity)
+│           ├── mailboxes/          # Mailbox detail tabs (routing planned)
+│           ├── teams/              # Teams + members (planned, Sprint 9)
+│           ├── agents/             # Agents (planned, Sprint 9)
 │           └── settings/           # ai-models.tsx, general.tsx (Classification / Drafting tabs)
 ├── tests/                          # Core unit tests (fetcher, database, parser, …)
 └── src/
@@ -717,7 +721,8 @@ email_assistant/
         │   ├── knowledge_indexing.py # Indexing service (atomic replace)
         │   ├── knowledge_retrieval.py # Mailbox-scoped retrieval
         │   ├── attachments.py       # Attachment processors (PDF/image/archive) (planned)
-        │   ├── rag.py              # Retrieval query builder + context format
+        │   ├── attachments.py      # Attachment processors (PDF/image/archive) (planned, Sprint 11)
+│   ├── rag.py              # Retrieval query builder + context format
         │   ├── mcp_runtime.py      # MCP client manager (transport abstraction)
         │   ├── tool_permissions.py # Default-deny tool permissions
         │   ├── observability.py    # Observer context manager
