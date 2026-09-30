@@ -52,10 +52,12 @@ export default function CaseDetailPage() {
 
   const caseItem = cases.find((item) => item.id === caseId)
 
+  // Sync the editor whenever the case data arrives or changes (e.g. the
+  // cases query was still refetching the processed draft on first render).
   useEffect(() => {
     if (caseItem) setDraft(caseItem.draft)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [caseId])
+  }, [caseItem?.id, caseItem?.draft])
 
   const saveDraftMutation = useMutation({
     mutationFn: ({ id, draft }: { id: string; draft: string }) =>
