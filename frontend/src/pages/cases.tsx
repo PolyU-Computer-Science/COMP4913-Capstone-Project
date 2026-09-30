@@ -4,6 +4,7 @@ import { FolderOpen, MoreHorizontal } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import { CategoryBadge } from '@/components/category-badge'
+import { PriorityBadge } from '@/components/priority-badge'
 import { EmptyState } from '@/components/empty-state'
 import { PageHeader } from '@/components/page-header'
 import { StatusBadge } from '@/components/status-badge'
@@ -147,8 +148,8 @@ export default function Cases() {
                         <span className="text-muted-foreground">—</span>
                       )}
                     </TableCell>
-                    <TableCell className="capitalize">
-                      {item.classification.priority}
+                    <TableCell>
+                      <PriorityBadge priority={item.classification.priority} />
                     </TableCell>
                     <TableCell>
                       <StatusBadge status={caseStatus(item)} />

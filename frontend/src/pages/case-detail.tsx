@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Loader2, Send } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import { CategoryBadge } from '@/components/category-badge'
+import { PriorityBadge } from '@/components/priority-badge'
 import { CaseFields } from '@/components/case-fields'
 import { EmailBody } from '@/components/email-body'
 import { StatusBadge } from '@/components/status-badge'
@@ -195,7 +196,7 @@ function ContextPanel({ caseItem }: { caseItem: Case }) {
               )}
             </Row>
             <Row label="Priority">
-              <span className="capitalize">{caseItem.classification.priority}</span>
+              <PriorityBadge priority={caseItem.classification.priority} />
             </Row>
             <Row label="Mailbox">
               <span>{caseItem.mailbox_id ?? '—'}</span>
