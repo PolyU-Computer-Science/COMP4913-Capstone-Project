@@ -13,7 +13,6 @@ export interface Classification {
   category: string
   topic: string
   priority: string
-  urgency_score: number
   summary: string
   custom: Record<string, unknown>
 }

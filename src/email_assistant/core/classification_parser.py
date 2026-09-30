@@ -75,10 +75,6 @@ def _extract_python_literal(text: str) -> dict | None:
         match = re.search(name + r"\s*=\s*'([^']*)'", text)
         return match.group(1) if match else None
 
-    def int_field(name: str) -> int | None:
-        match = re.search(name + r"\s*=\s*(-?\d+)", text)
-        return int(match.group(1)) if match else None
-
     category = string_field("category")
     topic = string_field("topic")
     priority = string_field("priority")
@@ -91,7 +87,6 @@ def _extract_python_literal(text: str) -> dict | None:
         "category": category,
         "topic": topic or "",
         "priority": priority or "normal",
-        "urgency_score": int_field("urgency_score") or 0,
         "summary": summary or "",
         "custom": _extract_custom_dict(text),
     }

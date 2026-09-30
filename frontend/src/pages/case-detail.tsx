@@ -197,9 +197,6 @@ function ContextPanel({ caseItem }: { caseItem: Case }) {
             <Row label="Priority">
               <span className="capitalize">{caseItem.classification.priority}</span>
             </Row>
-            <Row label="Urgency">
-              <span>{caseItem.classification.urgency_score}/10</span>
-            </Row>
             <Row label="Mailbox">
               <span>{caseItem.mailbox_id ?? '—'}</span>
             </Row>

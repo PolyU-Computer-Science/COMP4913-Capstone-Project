@@ -22,7 +22,6 @@ class ClassificationContract(BaseModel):
     category: str = Field(description="question, incident, problem, task, or spam")
     topic: str = Field(default="", description="topic name from the mailbox's available topics")
     priority: str = Field(default="normal", description="low, normal, high, or urgent")
-    urgency_score: int = Field(default=0, description="1-10")
     summary: str = Field(default="")
     custom_fields: dict[str, Any] = Field(default_factory=dict)
 
@@ -36,7 +35,6 @@ class ClassificationOutcome:
     topic_id: int | None = None
     topic_resolved: bool = False
     priority: str = "normal"
-    urgency_score: int = 0
     summary: str = ""
     custom_fields: dict[str, Any] = field(default_factory=dict)
     structured_valid: bool = False
@@ -57,7 +55,7 @@ def build_classification_prompt(*, email_content: str, topics: list[dict[str, An
         "You are an email classification agent. Respond with ONLY a single "
         "valid JSON object matching this schema: "
         '{"category": str, "topic": str, "priority": str, '
-        '"urgency_score": int, "summary": str, "custom_fields": object}. '
+        '"summary": str, "custom_fields": object}. '
         "The topic must be one of the provided available topics if one fits, "
         "otherwise empty. Do not invent topics."
     )
@@ -113,7 +111,6 @@ class StructuredClassifier:
         data = result.data
         outcome.category = data.category
         outcome.priority = data.priority
-        outcome.urgency_score = data.urgency_score
         outcome.summary = data.summary
 
         # Business validation: topic must resolve against mailbox topics.

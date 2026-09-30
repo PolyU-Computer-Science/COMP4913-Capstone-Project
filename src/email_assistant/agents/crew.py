@@ -73,7 +73,7 @@ class EmailAssistant:
             expected_output=(
                 "A structured classification object with category (question, "
                 "incident, problem, task, or spam), topic, priority, "
-                "urgency_score, summary, and custom field values."
+                "summary, and custom field values."
             ),
             agent=self.classifier(),
             output_pydantic=EmailClassification,

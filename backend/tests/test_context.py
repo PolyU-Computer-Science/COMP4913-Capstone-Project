@@ -37,7 +37,6 @@ def _fake_kickoff(self, inputs=None, **kwargs):  # noqa: ANN001
             "category": "question",
             "topic": "password_reset",
             "priority": "normal",
-            "urgency_score": 3,
             "summary": "summary",
             "custom": {},
         }
@@ -145,7 +144,6 @@ def test_invalid_topic_is_not_resolved_to_a_topic_id(monkeypatch) -> None:
                     "category": "question",
                     "topic": "payment_cancellation_dispute",
                     "priority": "normal",
-                    "urgency_score": 3,
                     "summary": "s",
                     "custom": {},
                 }

@@ -30,7 +30,6 @@ class ClassificationOut(BaseModel):
     category: str
     topic: str
     priority: str
-    urgency_score: int
     summary: str
     custom: dict = Field(default_factory=dict)
     topic_id: int | None = None

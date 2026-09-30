@@ -169,7 +169,6 @@ def test_manual_field_not_overwritten_by_ai() -> None:
                     "category": "question",
                     "topic": "refund",
                     "priority": "normal",
-                    "urgency_score": 3,
                     "summary": "s",
                     "custom": {},
                 }
@@ -223,7 +222,6 @@ def test_ai_extraction_fills_empty_field_only() -> None:
                     "category": "question",
                     "topic": "refund",
                     "priority": "normal",
-                    "urgency_score": 3,
                     "summary": "s",
                     "custom": {"order_id": "ORD-1"},
                 }

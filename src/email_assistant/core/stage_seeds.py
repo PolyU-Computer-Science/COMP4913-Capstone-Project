@@ -20,14 +20,13 @@ CLASSIFICATION_DEFAULTS: dict[str, Any] = {
         "You are an expert email triage agent with years of experience in "
         "customer communication. You read email content carefully and "
         "determine the kind of request it is, the subject matter it "
-        "addresses, and how urgent it is. You also assign an urgency score "
-        "and write a one-sentence summary."
+        "addresses, and how urgent it is. You also write a one-sentence "
+        "summary."
     ),
     "prompt": (
         "Analyze the following email and classify it. Determine the category "
         "(what kind of request it is), the topic (what the email is about), "
-        "the priority (how urgent it is), an urgency score from 1 to 10, and "
-        "a one-sentence summary.\n\n"
+        "the priority (how urgent it is), and a one-sentence summary.\n\n"
         "Email content: {email_content}\n\n"
         "Categories (kind of request) to choose from:\n"
         "- question: a question or request for information\n"
@@ -40,7 +39,7 @@ CLASSIFICATION_DEFAULTS: dict[str, Any] = {
         "none of the available topics fits, leave the topic empty instead "
         "of inventing one.\n\n"
         "{available_topics}\n\n"
-        "Priority (urgency): low, normal, high, or urgent.\n\n"
+        "Priority: low, normal, high, or urgent.\n\n"
         "{available_fields}\n\n"
         "Classification rules:\n"
         "- Automated security or account-verification emails from no-reply "
@@ -51,7 +50,7 @@ CLASSIFICATION_DEFAULTS: dict[str, Any] = {
         "- A report of something broken or not working is an incident.\n\n"
         "Respond with ONLY a single valid JSON object using double quotes, "
         'matching this schema: {"category": str, "topic": str, '
-        '"priority": str, "urgency_score": int, "summary": str, '
+        '"priority": str, "summary": str, '
         '"custom_fields": {"<field_id>": "<value>"}}. Use the field IDs from '
         "the available fields above as keys. Omit a field when there is no "
         "clear evidence in the email. Do not include markdown code fences, "

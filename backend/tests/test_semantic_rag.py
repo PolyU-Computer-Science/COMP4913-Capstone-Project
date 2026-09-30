@@ -206,7 +206,6 @@ def test_draft_stores_knowledge_provenance(monkeypatch) -> None:
                     "category": "question",
                     "topic": "refund",
                     "priority": "normal",
-                    "urgency_score": 3,
                     "summary": "s",
                     "custom": {},
                 }
@@ -261,7 +260,6 @@ def test_no_rag_empty_retrieval_still_drafts(monkeypatch) -> None:
                     "category": "question",
                     "topic": "refund",
                     "priority": "normal",
-                    "urgency_score": 3,
                     "summary": "s",
                     "custom": {},
                 }

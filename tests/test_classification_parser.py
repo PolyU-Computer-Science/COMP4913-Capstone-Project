@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from email_assistant.core.classification_parser import parse_classification
 
-JSON = '{"category": "spam", "topic": "phishing_alert", "priority": "low", "urgency_score": 2, "summary": "A suspicious email", "custom": {}}'
+JSON = '{"category": "spam", "topic": "phishing_alert", "priority": "low", "summary": "A suspicious email", "custom": {}}'
 
 PYTHON_LITERAL = (
     "category='spam' topic='phishing_alert' priority='low' "
-    "urgency_score=2 summary='A suspicious email' custom={}"
+    "summary='A suspicious email' custom={}"
 )
 
 
@@ -16,7 +16,6 @@ def test_parse_json() -> None:
     assert result.category == "spam"
     assert result.topic == "phishing_alert"
     assert result.priority == "low"
-    assert result.urgency_score == 2
 
 
 def test_parse_json_with_code_fence() -> None:
@@ -31,7 +30,6 @@ def test_parse_python_literal() -> None:
     assert result.category == "spam"
     assert result.topic == "phishing_alert"
     assert result.priority == "low"
-    assert result.urgency_score == 2
     assert result.custom == {}
 
 

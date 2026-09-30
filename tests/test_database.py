@@ -13,7 +13,6 @@ CLASSIFICATION = {
     "category": "question",
     "topic": "meeting",
     "priority": "normal",
-    "urgency_score": 3,
     "summary": "A meeting request",
     "custom": {"product": "app"},
 }

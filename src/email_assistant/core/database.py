@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS draft_knowledge_refs (
 _EMAIL_COLUMNS = "id, sender, subject, body, timestamp, html, mailbox_id"
 
 _CASE_COLUMNS = (
-    f"{_EMAIL_COLUMNS}, status, category, topic, priority, urgency_score, "
+    f"{_EMAIL_COLUMNS}, status, category, topic, priority, "
     "summary, custom, draft, created_at, sent_at, topic_id, topic_raw"
 )
 
@@ -132,7 +132,6 @@ def _row_to_case(row: sqlite3.Row) -> dict[str, Any]:
             "category": row["category"] or "unknown",
             "topic": row["topic"] or "",
             "priority": row["priority"] or "normal",
-            "urgency_score": int(row["urgency_score"] or 0),
             "summary": row["summary"] or "",
             "custom": custom,
         },
@@ -368,7 +367,6 @@ class Database:
                         category = ?,
                         topic = ?,
                         priority = ?,
-                        urgency_score = ?,
                         summary = ?,
                         custom = ?,
                         draft = ?,
@@ -382,7 +380,6 @@ class Database:
                         classification.get("category", "unknown"),
                         classification.get("topic", ""),
                         classification.get("priority", "normal"),
-                        int(classification.get("urgency_score", 0)),
                         classification.get("summary", ""),
                         custom_json,
                         draft,

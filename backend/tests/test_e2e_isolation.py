@@ -42,7 +42,6 @@ def _fake_kickoff(self, inputs=None, **kwargs):  # noqa: ANN001
             "category": "question",
             "topic": "refund",
             "priority": "normal",
-            "urgency_score": 3,
             "summary": "refund request",
             "custom": {},
         }
