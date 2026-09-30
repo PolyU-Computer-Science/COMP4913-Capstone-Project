@@ -8,6 +8,7 @@ import { EmptyState } from '@/components/empty-state'
 import { PageHeader } from '@/components/page-header'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import {
   DropdownMenu,
@@ -115,6 +116,7 @@ export default function Cases() {
                 <TableRow>
                   <TableHead>Case</TableHead>
                   <TableHead>Mailbox</TableHead>
+                  <TableHead>Category</TableHead>
                   <TableHead>Topic</TableHead>
                   <TableHead>Priority</TableHead>
                   <TableHead>Status</TableHead>
@@ -137,6 +139,13 @@ export default function Cases() {
                     </TableCell>
                     <TableCell>
                       <CategoryBadge category={item.classification.category} />
+                    </TableCell>
+                    <TableCell>
+                      {item.classification.topic ? (
+                        <Badge variant="outline">{item.classification.topic}</Badge>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     <TableCell className="capitalize">
                       {item.classification.priority}

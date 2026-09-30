@@ -101,6 +101,7 @@ def process_email(email_id: str) -> ProcessResponse:
     from email_assistant.core.knowledge_retrieval import KnowledgeRetriever
     from email_assistant.core.mailbox_context import load_mailbox_context
     from email_assistant.core.rag import build_retrieval_query, format_knowledge_context
+    from email_assistant.core.extraction import format_fields_prompt
     from email_assistant.core.topics import (
         format_topics_prompt,
         resolve_topic,
@@ -125,6 +126,9 @@ def process_email(email_id: str) -> ProcessResponse:
     context = load_mailbox_context(email.mailbox_id) if email.mailbox_id else None
     available_topics = (
         format_topics_prompt(context.topics) if context else ""
+    )
+    available_fields = (
+        format_fields_prompt(context.active_fields) if context else ""
     )
 
     trace_id = uuid.uuid4().hex
@@ -186,6 +190,7 @@ def process_email(email_id: str) -> ProcessResponse:
                 inputs={
                     "email_content": content,
                     "available_topics": available_topics,
+                    "available_fields": available_fields,
                     "knowledge_context": knowledge_context or "(no knowledge available)",
                 }
             )

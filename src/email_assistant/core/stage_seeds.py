@@ -41,6 +41,7 @@ CLASSIFICATION_DEFAULTS: dict[str, Any] = {
         "of inventing one.\n\n"
         "{available_topics}\n\n"
         "Priority (urgency): low, normal, high, or urgent.\n\n"
+        "{available_fields}\n\n"
         "Classification rules:\n"
         "- Automated security or account-verification emails from no-reply "
         "or notifications addresses that ask the recipient to click a link "
@@ -49,8 +50,12 @@ CLASSIFICATION_DEFAULTS: dict[str, Any] = {
         "- A direct question or request for information is a question.\n"
         "- A report of something broken or not working is an incident.\n\n"
         "Respond with ONLY a single valid JSON object using double quotes, "
-        "matching the schema described below. Do not include markdown code "
-        "fences, comments, or any text outside the JSON object."
+        'matching this schema: {"category": str, "topic": str, '
+        '"priority": str, "urgency_score": int, "summary": str, '
+        '"custom_fields": {"<field_id>": "<value>"}}. Use the field IDs from '
+        "the available fields above as keys. Omit a field when there is no "
+        "clear evidence in the email. Do not include markdown code fences, "
+        "comments, or any text outside the JSON object."
     ),
     "max_tokens": None,
     "temperature": None,
