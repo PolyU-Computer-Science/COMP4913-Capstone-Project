@@ -42,7 +42,6 @@ export default function CaseDetailPage() {
   const isMobile = useIsMobile()
   const queryClient = useQueryClient()
   const [draft, setDraft] = useState('')
-  const [contextTab, setContextTab] = useState('details')
   const [showMobileContext, setShowMobileContext] = useState(false)
 
   const { data: cases = [] } = useQuery<Case[]>({
@@ -94,7 +93,7 @@ export default function CaseDetailPage() {
   }
 
   const sent = caseItem.sent_at !== null
-  const contextPanel = <ContextPanel caseItem={caseItem} tab={contextTab} onTabChange={setContextTab} />
+  const contextPanel = <ContextPanel caseItem={caseItem} />
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -180,121 +179,94 @@ export default function CaseDetailPage() {
   )
 }
 
-function ContextPanel({
-  caseItem,
-  tab,
-  onTabChange,
-}: {
-  caseItem: Case
-  tab: string
-  onTabChange: (value: string) => void
-}) {
+function ContextPanel({ caseItem }: { caseItem: Case }) {
+  const unclassified = caseItem.topic_id === null && caseItem.topic_raw !== ''
+
   return (
     <div className="flex min-h-0 flex-col">
-      <Tabs value={tab} onValueChange={(v) => onTabChange(v ?? 'details')}>
-        <TabsList variant="line" className="w-full">
-          <TabsTrigger value="details" className="flex-1">
-            Details
-          </TabsTrigger>
-          <TabsTrigger value="ai" className="flex-1">
-            AI Context
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
-
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-4 p-4">
-          {tab === 'details' ? (
+          <Section title="Case">
+            <Row label="Status">
+              <StatusBadge status={caseItem.sent_at !== null ? 'sent' : 'draft'} />
+            </Row>
+            <Row label="Category">
+              <CategoryBadge category={caseItem.classification.category} />
+            </Row>
+            <Row label="Topic">
+              {caseItem.classification.topic ? (
+                <Badge variant="outline">{caseItem.classification.topic}</Badge>
+              ) : (
+                <span className="text-sm text-muted-foreground">—</span>
+              )}
+            </Row>
+            <Row label="Priority">
+              <span className="capitalize">{caseItem.classification.priority}</span>
+            </Row>
+            <Row label="Urgency">
+              <span>{caseItem.classification.urgency_score}/10</span>
+            </Row>
+            <Row label="Mailbox">
+              <span>{caseItem.mailbox_id ?? '—'}</span>
+            </Row>
+          </Section>
+
+          {caseItem.classification.summary && (
             <>
-              <Section title="Case">
-                <Row label="Status">
-                  <StatusBadge status={caseItem.sent_at !== null ? 'sent' : 'draft'} />
-                </Row>
-                <Row label="Category">
-                  <CategoryBadge category={caseItem.classification.category} />
-                </Row>
-                <Row label="Topic">
-                  {caseItem.classification.topic ? (
-                    <Badge variant="outline">{caseItem.classification.topic}</Badge>
-                  ) : (
-                    <span className="text-sm text-muted-foreground">—</span>
-                  )}
-                </Row>
-                <Row label="Priority">
-                  <span className="capitalize">{caseItem.classification.priority}</span>
-                </Row>
-                <Row label="Mailbox">
-                  <span>{caseItem.mailbox_id ?? '—'}</span>
-                </Row>
-              </Section>
-
               <Separator />
-
-              <Section title="Custom Fields">
-                <CaseFields caseId={caseItem.id} />
+              <Section title="AI Summary">
+                <p className="text-sm text-muted-foreground">
+                  {caseItem.classification.summary}
+                </p>
               </Section>
             </>
-          ) : (
+          )}
+
+          {unclassified && (
             <>
-              <Section title="Classification">
-                <div className="flex flex-wrap items-center gap-2">
-                  <CategoryBadge category={caseItem.classification.category} />
-                  {caseItem.classification.topic && (
-                    <Badge variant="outline">{caseItem.classification.topic}</Badge>
-                  )}
-                  {caseItem.topic_id === null && caseItem.topic_raw && (
-                    <Badge variant="outline" className="text-muted-foreground">
-                      Unclassified
-                    </Badge>
-                  )}
+              <Separator />
+              <p className="text-xs text-muted-foreground">
+                Matched topic "{caseItem.topic_raw}" is not in this mailbox's
+                topic list.
+              </p>
+            </>
+          )}
+
+          <Separator />
+
+          <Section title="Custom Fields">
+            <CaseFields caseId={caseItem.id} />
+          </Section>
+
+          {caseItem.knowledge_refs && caseItem.knowledge_refs.length > 0 && (
+            <>
+              <Separator />
+              <Section title="Knowledge Used">
+                <div className="flex flex-col gap-2">
+                  {caseItem.knowledge_refs.map((ref) => (
+                    <Collapsible
+                      key={`${ref.source_id}-${ref.chunk_id}`}
+                      className="rounded-lg border"
+                    >
+                      <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-sm">
+                        <span className="truncate">
+                          Source #{ref.source_id}
+                        </span>
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                          {ref.score.toFixed(3)}
+                          <ChevronRight className="size-3" />
+                        </span>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="border-t px-3 py-2 text-xs text-muted-foreground">
+                        <div className="flex flex-col gap-1">
+                          <span>Chunk ID: {ref.chunk_id}</span>
+                          <span>Score: {ref.score.toFixed(4)}</span>
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  ))}
                 </div>
-                <Row label="Urgency">
-                  <span>{caseItem.classification.urgency_score}/10</span>
-                </Row>
               </Section>
-
-              {caseItem.classification.summary && (
-                <>
-                  <Separator />
-                  <Section title="Summary">
-                    <p className="text-sm text-muted-foreground">
-                      {caseItem.classification.summary}
-                    </p>
-                  </Section>
-                </>
-              )}
-
-              {caseItem.knowledge_refs && caseItem.knowledge_refs.length > 0 && (
-                <>
-                  <Separator />
-                  <Section title="Knowledge Used">
-                    <div className="flex flex-col gap-2">
-                      {caseItem.knowledge_refs.map((ref) => (
-                        <Collapsible
-                          key={`${ref.source_id}-${ref.chunk_id}`}
-                          className="rounded-lg border"
-                        >
-                          <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-sm">
-                            <span className="truncate">
-                              Source #{ref.source_id}
-                            </span>
-                            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                              {ref.score.toFixed(3)}
-                              <ChevronRight className="size-3" />
-                            </span>
-                          </CollapsibleTrigger>
-                          <CollapsibleContent className="border-t px-3 py-2 text-xs text-muted-foreground">
-                            <div className="flex flex-col gap-1">
-                              <span>Chunk ID: {ref.chunk_id}</span>
-                              <span>Score: {ref.score.toFixed(4)}</span>
-                            </div>
-                          </CollapsibleContent>
-                        </Collapsible>
-                      ))}
-                    </div>
-                  </Section>
-                </>
-              )}
             </>
           )}
         </div>
