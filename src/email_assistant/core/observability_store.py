@@ -236,6 +236,24 @@ class ObservabilityStore:
                 conn.close()
         return [dict(row) for row in rows]
 
+    def get_email_subject(self, email_id: str) -> str | None:
+        """Look up an email's subject from the email store (best effort)."""
+        try:
+            from email_assistant.core.database import Database
+
+            db = Database()
+            with db._lock:
+                conn = db._connect()
+                try:
+                    row = conn.execute(
+                        "SELECT subject FROM emails WHERE id = ?", (email_id,)
+                    ).fetchone()
+                finally:
+                    conn.close()
+            return str(row["subject"]) if row else None
+        except Exception:  # noqa: BLE001 - subject display is best effort
+            return None
+
     # ---- tool audit ----
 
     def audit_tool_call(

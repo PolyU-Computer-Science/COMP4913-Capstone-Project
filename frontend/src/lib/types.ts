@@ -299,6 +299,18 @@ export interface ProcessingRun {
   error_message: string | null
 }
 
+export interface ProcessingTrace {
+  trace_id: string
+  email_id: string | null
+  email_subject: string | null
+  status: string
+  total_latency_ms: number
+  total_tokens: number
+  model: string | null
+  started_at: string | null
+  runs: ProcessingRun[]
+}
+
 export interface Connector {
   id: number
   name: string

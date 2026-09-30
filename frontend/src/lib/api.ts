@@ -18,6 +18,7 @@ import type {
   MailboxConnector,
   MailboxIn,
   ProcessingRun,
+  ProcessingTrace,
   RetrievalResponse,
   StagesSettings,
   Stats,
@@ -451,6 +452,15 @@ export async function fetchProcessingRuns(
 ): Promise<ProcessingRun[]> {
   const { data } = await client.get<ProcessingRun[]>(
     `/mailboxes/${mailboxId}/processing-runs`,
+  )
+  return data
+}
+
+export async function fetchProcessingTraces(
+  mailboxId: number,
+): Promise<ProcessingTrace[]> {
+  const { data } = await client.get<ProcessingTrace[]>(
+    `/mailboxes/${mailboxId}/processing-traces`,
   )
   return data
 }

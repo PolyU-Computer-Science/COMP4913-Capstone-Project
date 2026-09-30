@@ -156,7 +156,19 @@ def test_mailbox(mailbox_id: int) -> TestResult:
     if mailbox is None:
         raise HTTPException(status_code=404, detail="Mailbox not found")
 
+    if not mailbox.get("address") or not mailbox.get("imap_host"):
+        return TestResult(
+            ok=False, message="Email address or IMAP server is not configured."
+        )
+
     password = _store().get_mailbox_password(mailbox_id) or ""
+    if not password:
+        return TestResult(
+            ok=False,
+            message="No password set. Enter your IMAP password (for Gmail, "
+            "an App Password) and save before testing.",
+        )
+
     settings = EmailSettings(
         enabled=True,
         server=str(mailbox.get("imap_host") or ""),
@@ -171,7 +183,26 @@ def test_mailbox(mailbox_id: int) -> TestResult:
         fetch_via_imap(settings)
         return TestResult(ok=True, message="IMAP connection successful")
     except Exception as error:  # noqa: BLE001 - surface to the UI
-        return TestResult(ok=False, message=str(error))
+        raw = str(error)
+        lowered = raw.lower()
+        if "empty username or password" in lowered or "authenticationfailed" in lowered:
+            return TestResult(
+                ok=False,
+                message="Authentication failed. Check the email address and "
+                "password (for Gmail, use a 16-character App Password).",
+            )
+        if "name or service not known" in lowered or "getaddrinfo" in lowered:
+            return TestResult(
+                ok=False,
+                message=f"Cannot reach IMAP server '{mailbox.get('imap_host')}'. "
+                "Check the server name and your network.",
+            )
+        if "timed out" in lowered:
+            return TestResult(
+                ok=False,
+                message=f"Connection to '{mailbox.get('imap_host')}' timed out.",
+            )
+        return TestResult(ok=False, message=raw)
 
 
 # ---- topics ----

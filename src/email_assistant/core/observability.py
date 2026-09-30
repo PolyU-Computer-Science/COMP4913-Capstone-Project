@@ -40,6 +40,11 @@ class Observer:
 
         Yields the run id so the caller can attach token usage on success.
         """
+        # Auto-generate a trace id so every run is attributable to a pipeline.
+        if trace_id is None:
+            import uuid
+
+            trace_id = uuid.uuid4().hex
         try:
             run_id = self._store.start_run(
                 {

@@ -51,6 +51,14 @@ export function ConnectionTab({ mailbox }: { mailbox: Mailbox }) {
     onError: () => toast.error('Test failed'),
   })
 
+  function handleTest() {
+    if (!mailbox.has_password && !form.password) {
+      toast.error('Enter your password and save before testing the connection.')
+      return
+    }
+    testMutation.mutate()
+  }
+
   function set<K extends keyof typeof form>(key: K, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
@@ -198,7 +206,7 @@ export function ConnectionTab({ mailbox }: { mailbox: Mailbox }) {
       <div className="flex justify-end gap-2">
         <Button
           variant="outline"
-          onClick={() => testMutation.mutate()}
+          onClick={handleTest}
           disabled={testMutation.isPending}
         >
           {testMutation.isPending ? (

@@ -1,4 +1,4 @@
-"""Observability endpoints: processing runs and stats."""
+"""Observability endpoints: processing traces and stats."""
 
 from __future__ import annotations
 
@@ -37,6 +37,64 @@ def _run_out(run: dict) -> ProcessingRunOut:
     )
 
 
+# One email's pipeline = its runs share a trace_id, ordered by id (time).
+@router.get("/{mailbox_id}/processing-traces")
+def list_processing_traces(
+    mailbox_id: int,
+    limit: int = Query(default=50),
+) -> list[dict]:
+    """Return recent processing runs grouped into per-email traces."""
+    if SettingsStore().get_mailbox(mailbox_id) is None:
+        raise HTTPException(status_code=404, detail="Mailbox not found")
+
+    store = ObservabilityStore()
+    runs = store.list_runs(mailbox_id=mailbox_id, limit=500)
+
+    # Sync-level fetch runs carry no email id and would render as
+    # "(unknown email)" — per-email pipelines start at processing.
+    runs = [r for r in runs if r["stage"] != "email_fetch"]
+
+    traces: dict[str, list[dict]] = {}
+    order: list[str] = []
+    for run in runs:
+        trace_id = run.get("trace_id") or f"fetch-{run['id']}"
+        if trace_id not in traces:
+            traces[trace_id] = []
+            order.append(trace_id)
+        traces[trace_id].append(run)
+
+    result = []
+    for trace_id in order[:limit]:
+        trace_runs = sorted(traces[trace_id], key=lambda r: r["id"])
+        email_id = next((r["email_id"] for r in trace_runs if r["email_id"]), None)
+        email_subject = (
+            store.get_email_subject(email_id) if email_id else None
+        )
+        returnable = [_run_out(r) for r in trace_runs]
+        result.append(
+            {
+                "trace_id": trace_id,
+                "email_id": email_id,
+                "email_subject": email_subject,
+                "status": (
+                    "failed"
+                    if any(r["status"] == "failed" for r in trace_runs)
+                    else "success"
+                ),
+                "total_latency_ms": sum(
+                    r["latency_ms"] or 0 for r in trace_runs
+                ),
+                "total_tokens": sum(r["total_tokens"] or 0 for r in trace_runs),
+                "model": next(
+                    (r["model"] for r in trace_runs if r["model"]), None
+                ),
+                "started_at": trace_runs[0]["started_at"],
+                "runs": returnable,
+            }
+        )
+    return result
+
+
 @router.get("/{mailbox_id}/processing-runs", response_model=list[ProcessingRunOut])
 def list_processing_runs(
     mailbox_id: int,
@@ -56,16 +114,44 @@ def list_processing_runs(
 def processing_stats(mailbox_id: int) -> dict:
     if SettingsStore().get_mailbox(mailbox_id) is None:
         raise HTTPException(status_code=404, detail="Mailbox not found")
-    runs = ObservabilityStore().list_runs(mailbox_id=mailbox_id, limit=10000)
+    store = ObservabilityStore()
+    runs = store.list_runs(mailbox_id=mailbox_id, limit=10000)
 
-    total = len(runs)
-    succeeded = sum(1 for r in runs if r["status"] == "success")
-    latencies = [r["latency_ms"] for r in runs if r["latency_ms"] is not None]
-    tokens = sum(r["total_tokens"] or 0 for r in runs)
+    # "Processed" counts emails, not runs: group by trace, one per email.
+    # email_fetch runs are excluded — they belong to sync operations, not
+    # to processing a specific email.
+    _NON_EMAIL_STAGES = {"email_fetch"}
+    processing = [r for r in runs if r["stage"] not in _NON_EMAIL_STAGES]
+    # Runs without a trace_id (e.g. ad-hoc classification calls) each count
+    # as one unit; runs sharing a trace_id count once per email.
+    traces: set[str] = set()
+    untraced = 0
+    for r in processing:
+        if r.get("trace_id"):
+            traces.add(r["trace_id"])
+        else:
+            untraced += 1
+    processed = len(traces) + untraced
+
+    failed_traces: set[str] = set()
+    failed_untraced = 0
+    for r in runs:
+        if r["status"] != "failed":
+            continue
+        if r.get("trace_id"):
+            failed_traces.add(r["trace_id"])
+        else:
+            failed_untraced += 1
+    failed = len(failed_traces & traces) + min(failed_untraced, untraced)
+
+    latencies = [r["latency_ms"] for r in processing if r["latency_ms"] is not None]
+    tokens = sum(r["total_tokens"] or 0 for r in processing)
 
     return {
-        "processed": total,
-        "success_rate": round(succeeded / total, 4) if total else 0.0,
+        "processed": processed,
+        "success_rate": round((processed - failed) / processed, 4)
+        if processed
+        else 0.0,
         "average_latency_ms": round(sum(latencies) / len(latencies), 1)
         if latencies
         else 0.0,
