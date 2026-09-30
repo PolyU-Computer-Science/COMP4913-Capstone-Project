@@ -72,6 +72,17 @@ export default function Inbox() {
     queryFn: fetchMailboxes,
   })
 
+  // Only mailboxes with auto_process enabled are processed after a sync.
+  // With "All Mailboxes" selected, sync auto-processes only if EVERY
+  // mailbox opts in; otherwise it stays manual.
+  const shouldAutoProcess = (() => {
+    const scope =
+      activeMailboxId !== undefined
+        ? mailboxes.filter((m) => m.id === activeMailboxId)
+        : mailboxes
+    return scope.length > 0 && scope.every((m) => m.auto_process)
+  })()
+
   const syncMutation = useMutation({
     mutationFn: () => syncEmails(activeMailboxId),
     onSuccess: ({ synced }) => {
@@ -82,8 +93,10 @@ export default function Inbox() {
           ? `Fetched ${synced} new email${synced === 1 ? '' : 's'}`
           : 'Already up to date',
       )
-      setAutoProcessing(true)
-      processAllMutation.mutate()
+      if (shouldAutoProcess) {
+        setAutoProcessing(true)
+        processAllMutation.mutate()
+      }
     },
     onError: (error) => {
       const detail = (error as { response?: { data?: { detail?: string } } })
