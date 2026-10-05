@@ -7,20 +7,96 @@ of the runtime never depends on the MCP SDK or HTTP library internals.
 
 A ``NoopTransport`` is retained for offline tests/CI, so automated tests never
 make network calls.
+
+Server URLs are validated before any request is made (SSRF guard): only
+``https://`` URLs on public hosts are allowed by default, with an optional
+admin allowlist (``ALLOWED_MCP_SERVERS``) for exceptions.
 """
 
 from __future__ import annotations
 
+import ipaddress
 import json
+import os
+import socket
+from urllib.parse import urlparse
 from typing import Any
 
 from email_assistant.core.mcp_runtime import MCPTransport, NoopTransport  # noqa: F401
 
 MCP_PROTOCOL_VERSION = "2025-06-18"
 
+DEFAULT_ALLOWED_MCP_SERVERS = (
+    "https://demo.solutionforest.net/mcp/mtr/",
+)
+
 
 class MCPConnectionError(RuntimeError):
     """Could not connect / transport failure."""
+
+
+class MCPServerNotAllowed(MCPConnectionError):
+    """The server URL was rejected by the SSRF guard."""
+
+
+def validate_server_url(server: str) -> str:
+    """Validate an MCP server URL before any request is made.
+
+    Rules (SSRF guard):
+    - must be a valid ``https://`` URL (http is rejected; the allowlist can
+      only relax the private-host rule, not the TLS rule);
+    - the host must not resolve to a loopback, private, link-local, or
+      unspecified address;
+    - URLs on the ``ALLOWED_MCP_SERVERS`` allowlist (comma-separated env var,
+      defaulted to the demo MTR endpoint) bypass the private-host check but
+      never the https requirement.
+
+    Returns the normalised URL, or raises ``MCPServerNotAllowed``.
+    """
+    raw = (server or "").strip()
+    parsed = urlparse(raw)
+
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise MCPServerNotAllowed(
+            "MCP server URL must be an https:// URL with a hostname"
+        )
+
+    host = parsed.hostname
+    normalised = f"https://{host}{parsed.path or '/'}"
+
+    allowlist = [
+        entry.strip().rstrip("/")
+        for entry in os.environ.get(
+            "ALLOWED_MCP_SERVERS",
+            ",".join(DEFAULT_ALLOWED_MCP_SERVERS),
+        ).split(",")
+        if entry.strip()
+    ]
+    if normalised.rstrip("/") in allowlist:
+        return normalised
+
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror as error:
+        raise MCPServerNotAllowed(
+            f"MCP server host could not be resolved: {host}"
+        ) from error
+
+    for info in infos:
+        address = ipaddress.ip_address(info[4][0])
+        if (
+            address.is_loopback
+            or address.is_private
+            or address.is_link_local
+            or address.is_unspecified
+            or address.is_reserved
+        ):
+            raise MCPServerNotAllowed(
+                f"MCP server host resolves to a non-public address ({address}); "
+                "refusing to connect"
+            )
+
+    return normalised
 
 
 class MCPTimeoutError(MCPConnectionError):
@@ -52,6 +128,7 @@ class StreamableHttpTransport(MCPTransport):
     def _rpc(self, server: str, method: str, params: dict | None) -> Any:
         import httpx
 
+        server = validate_server_url(server)
         body = {
             "jsonrpc": "2.0",
             "id": 1,

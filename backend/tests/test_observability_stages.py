@@ -28,29 +28,43 @@ def _reset(tmp_path, monkeypatch):
 
 
 def _fake_kickoff(self, inputs=None, **kwargs):  # noqa: ANN001
-    classification = SimpleNamespace(
-        model_dump=lambda: {
-            "category": "question",
-            "topic": "refund",
-            "priority": "normal",
-            "summary": "s",
-            "custom": {},
-        }
-    )
-    usage = SimpleNamespace(
-        get=lambda *a, **k: None,
-    )
     return SimpleNamespace(
-        pydantic=classification,
         raw="Draft",
         usage_metrics={"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
     )
 
 
-def _process_support_email(monkeypatch) -> tuple[int, str]:
+def _fake_classify(self, email_content, topics, fields=None):  # noqa: ANN001
+    from email_assistant.core.structured_classification import (
+        ClassificationOutcome,
+    )
+
+    return ClassificationOutcome(
+        category="question",
+        topic="refund",
+        topic_resolved=True,
+        priority="normal",
+        summary="s",
+        custom_fields={},
+        structured_valid=True,
+        attempts=1,
+        prompt_tokens=100,
+        completion_tokens=50,
+        total_tokens=150,
+    )
+
+
+def _mock_pipeline(monkeypatch) -> None:
     import crewai
 
     monkeypatch.setattr(crewai.Crew, "kickoff", _fake_kickoff)
+    from email_assistant.core.structured_classification import StructuredClassifier
+
+    monkeypatch.setattr(StructuredClassifier, "classify", _fake_classify)
+
+
+def _process_support_email(monkeypatch) -> tuple[int, str]:
+    _mock_pipeline(monkeypatch)
 
     import email_assistant.core
 
@@ -107,27 +121,27 @@ def test_processing_stages_recorded(monkeypatch) -> None:
     runs = ObservabilityStore().list_runs(mailbox_id=mailbox_id)
     stages = {r["stage"] for r in runs}
     assert "email_fetch" in stages
+    assert "classification" in stages
     assert "email_processing" in stages
-    assert "field_extraction" in stages
 
 
-def test_token_usage_recorded_from_crewai_result(monkeypatch) -> None:
+def test_token_usage_recorded_from_structured_result(monkeypatch) -> None:
     mailbox_id, _ = _process_support_email(monkeypatch)
     runs = ObservabilityStore().list_runs(mailbox_id=mailbox_id)
-    processing = next(r for r in runs if r["stage"] == "email_processing")
-    assert processing["input_tokens"] == 100
-    assert processing["output_tokens"] == 50
-    assert processing["total_tokens"] == 150
+    classification = next(r for r in runs if r["stage"] == "classification")
+    assert classification["input_tokens"] == 100
+    assert classification["output_tokens"] == 50
+    assert classification["total_tokens"] == 150
 
 
-def test_field_extraction_metadata_recorded(monkeypatch) -> None:
+def test_classification_metadata_recorded(monkeypatch) -> None:
     mailbox_id, _ = _process_support_email(monkeypatch)
     runs = ObservabilityStore().list_runs(mailbox_id=mailbox_id)
-    extraction = next(r for r in runs if r["stage"] == "field_extraction")
+    classification = next(r for r in runs if r["stage"] == "classification")
     import json
 
-    metadata = json.loads(extraction["metadata_json"])
-    assert "fields_proposed" in metadata
+    metadata = json.loads(classification["metadata_json"])
+    assert "structured_valid" in metadata
     assert "topic_resolved" in metadata
 
 
@@ -148,10 +162,9 @@ def test_retrieval_metadata_recorded(monkeypatch) -> None:
     client.post(f"/api/mailboxes/{mailbox_id}/knowledge/{source['id']}")
     KnowledgeIndexService().index_source(mailbox_id, source)
 
-    import crewai
     import email_assistant.core
 
-    monkeypatch.setattr(crewai.Crew, "kickoff", _fake_kickoff)
+    _mock_pipeline(monkeypatch)
     monkeypatch.setattr(
         email_assistant.core,
         "fetch_emails",

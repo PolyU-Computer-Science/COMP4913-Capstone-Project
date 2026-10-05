@@ -48,10 +48,14 @@ def send_case(case_id: str) -> CaseOut:
     if not case.draft.strip():
         raise HTTPException(status_code=422, detail="Draft is empty")
 
-    account = SettingsStore().get_enabled_mail_account()
+    account = SettingsStore().get_mailbox_send_account(case.mailbox_id)
     if account is None:
         raise HTTPException(
-            status_code=400, detail="No enabled mail account configured"
+            status_code=400,
+            detail=(
+                "The case's mailbox has no SMTP account configured; "
+                "cannot send from the correct mailbox"
+            ),
         )
 
     from email_assistant.core.observability import Observer

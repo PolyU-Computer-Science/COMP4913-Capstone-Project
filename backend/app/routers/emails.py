@@ -101,11 +101,6 @@ def process_email(email_id: str) -> ProcessResponse:
     from email_assistant.core.knowledge_retrieval import KnowledgeRetriever
     from email_assistant.core.mailbox_context import load_mailbox_context
     from email_assistant.core.rag import build_retrieval_query, format_knowledge_context
-    from email_assistant.core.extraction import format_fields_prompt
-    from email_assistant.core.topics import (
-        format_topics_prompt,
-        resolve_topic,
-    )
 
     email = store.get_email(email_id)
     if email is None:
@@ -124,12 +119,6 @@ def process_email(email_id: str) -> ProcessResponse:
 
     # Load the mailbox's business context (topics, fields, knowledge, tools).
     context = load_mailbox_context(email.mailbox_id) if email.mailbox_id else None
-    available_topics = (
-        format_topics_prompt(context.topics) if context else ""
-    )
-    available_fields = (
-        format_fields_prompt(context.active_fields) if context else ""
-    )
 
     trace_id = uuid.uuid4().hex
     observer = Observer()
@@ -178,42 +167,59 @@ def process_email(email_id: str) -> ProcessResponse:
         except Exception:  # noqa: BLE001 - RAG must not block processing
             knowledge_context = ""
 
-    # 2. Classifier + Drafter (single CrewAI sequential crew).
+    # 2. Classification via the structured runtime (same path as evaluation):
+    #    raw response → JSON extraction → repair → Pydantic validation
+    #    → business validation (topic resolution + field validation).
+    from email_assistant.core.structured_classification import StructuredClassifier
+    from email_assistant.core.structured_llm import (
+        StructuredLLMError,
+        build_structured_client_from_settings,
+    )
+
+    classification_outcome = None
     try:
         with observer.run(
-            stage="email_processing",
+            stage="classification",
             mailbox_id=email.mailbox_id,
             email_id=email_id,
             trace_id=trace_id,
-        ) as processing_run_id:
-            result = EmailAssistant().crew().kickoff(
-                inputs={
-                    "email_content": content,
-                    "available_topics": available_topics,
-                    "available_fields": available_fields,
-                    "knowledge_context": knowledge_context or "(no knowledge available)",
-                }
+        ) as classification_run_id:
+            classifier_settings = load_classifier_settings(email.mailbox_id)
+            structured_client = build_structured_client_from_settings(
+                classifier_settings
             )
-        _record_usage(observer, processing_run_id, result)
+            outcome = StructuredClassifier(structured_client).classify(
+                content,
+                context.topics if context else [],
+                context.active_fields if context else None,
+            )
+            classification_outcome = outcome
+        if classification_run_id is not None:
+            observer.record_usage(
+                classification_run_id,
+                input_tokens=outcome.prompt_tokens,
+                output_tokens=outcome.completion_tokens,
+                total_tokens=outcome.total_tokens,
+            )
+            observer.attach_metadata(
+                classification_run_id,
+                {
+                    "structured_valid": outcome.structured_valid,
+                    "fallback_parser_used": outcome.fallback_parser_used,
+                    "repair_attempted": outcome.repair_attempted,
+                    "attempts": outcome.attempts,
+                    "topic_resolved": outcome.topic_resolved,
+                    "latency_ms": outcome.latency_ms,
+                },
+            )
+    except StructuredLLMError:
+        store.mark_failed(email_id)
+        raise
     except Exception:
         store.mark_failed(email_id)
         raise
 
-    classification = None
-    if result.pydantic is not None:
-        classification = ClassificationOut(**result.pydantic.model_dump())
-    else:
-        from email_assistant.core.classification_parser import (
-            parse_classification,
-        )
-
-        tasks_output = getattr(result, "tasks_output", None) or []
-        if tasks_output:
-            parsed = parse_classification(tasks_output[0].raw or "")
-            if parsed is not None:
-                classification = ClassificationOut(**parsed.model_dump())
-
-    if classification is None:
+    if classification_outcome is None or not classification_outcome.category:
         store.mark_failed(email_id)
         raise HTTPException(
             status_code=422,
@@ -224,16 +230,26 @@ def process_email(email_id: str) -> ProcessResponse:
             ),
         )
 
-    # Resolve the free-form topic against the mailbox's configured topics.
-    topic_id, canonical = resolve_topic(
-        context.topics if context else [], classification.topic
-    )
-    classification.topic_id = topic_id
-    classification.topic_raw = classification.topic
-    if canonical:
-        classification.topic = canonical
+    outcome = classification_outcome
+    # Defense-in-depth: re-resolve the topic against the mailbox's topics
+    # (the structured classifier already resolved; this also covers outcomes
+    # from paths where resolution was skipped).
+    from email_assistant.core.topics import resolve_topic
 
-    case = store.save_case(email_id, classification, result.raw)
+    topic_id, canonical = resolve_topic(
+        context.topics if context else [], outcome.topic
+    )
+    classification = ClassificationOut(
+        category=outcome.category,
+        topic=canonical or outcome.topic,
+        priority=outcome.priority,
+        summary=outcome.summary,
+        custom={str(k): v for k, v in outcome.custom_fields.items()},
+        topic_id=topic_id if topic_id is not None else outcome.topic_id,
+        topic_raw=outcome.topic,
+    )
+
+    case = store.save_case(email_id, classification, "")
     if case is None:
         store.mark_failed(email_id)
         raise HTTPException(status_code=404, detail="Email not found")
@@ -245,44 +261,75 @@ def process_email(email_id: str) -> ProcessResponse:
         except Exception:  # noqa: BLE001 - provenance is best effort
             pass
 
-    # 3. AI field extraction (structured, mailbox-scoped, partial success).
-    if context and context.active_fields:
-        from email_assistant.core.extraction import ClassificationExtractionClient
-        from email_assistant.core.extraction_service import (
-            ExtractionService,
-            outcome_to_values_json,
-        )
+    # 3. Drafting via the CrewAI drafter (grounded in retrieved knowledge and
+    #    the validated classification).
+    import json as _json
 
-        client = ClassificationExtractionClient(
-            classification.topic, classification.custom
-        )
-        extraction_service = ExtractionService(client)
-        try:
-            with observer.run(
-                stage="field_extraction",
-                mailbox_id=email.mailbox_id,
-                email_id=email_id,
-                trace_id=trace_id,
-            ) as extraction_run_id:
-                outcome = extraction_service.extract(
-                    content, context.topics, context.active_fields
-                )
-            observer.attach_metadata(
-                extraction_run_id,
-                {
-                    "topic_resolved": outcome.topic_resolved,
-                    "fields_proposed": outcome.fields_proposed,
-                    "fields_accepted": outcome.fields_accepted,
-                    "fields_rejected": outcome.fields_rejected,
-                },
+    try:
+        with observer.run(
+            stage="email_processing",
+            mailbox_id=email.mailbox_id,
+            email_id=email_id,
+            trace_id=trace_id,
+        ) as processing_run_id:
+            draft_result = EmailAssistant().draft_only_crew().kickoff(
+                inputs={
+                    "email_content": content,
+                    "classification": _json.dumps(
+                        {
+                            "category": outcome.category,
+                            "topic": outcome.topic,
+                            "priority": outcome.priority,
+                            "summary": outcome.summary,
+                            "custom_fields": outcome.custom_fields,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    "knowledge_context": knowledge_context or "(no knowledge available)",
+                }
             )
-            values = outcome_to_values_json(outcome)
-            if values:
-                store.fill_ai_case_field_values(email_id, values)
-        except Exception:  # noqa: BLE001 - extraction failure must not block
-            pass
+        _record_usage(observer, processing_run_id, draft_result)
+        draft = str(getattr(draft_result, "raw", "") or "")
+    except Exception:
+        store.mark_failed(email_id)
+        raise
 
-    return ProcessResponse(case=case)
+    if not draft.strip():
+        store.mark_failed(email_id)
+        raise HTTPException(
+            status_code=502,
+            detail="Drafting failed: the model returned an empty reply.",
+        )
+
+    saved = store.save_draft(email_id, draft)
+    if saved is None:
+        store.mark_failed(email_id)
+        raise HTTPException(status_code=404, detail="Email not found")
+
+    # 4. Persist accepted field values (already business-validated by the
+    #    structured classifier; keys may be field ids or field names —
+    #    resolve names against the mailbox's definitions).
+    if outcome.custom_fields:
+        fields_by_name = {
+            str(f.get("name", "")).lower(): int(f["id"])
+            for f in (context.active_fields if context else [])
+        }
+        values: dict[int, str] = {}
+        for key, value in outcome.custom_fields.items():
+            if isinstance(key, int) or str(key).isdigit():
+                field_id = int(key)
+            else:
+                field_id = fields_by_name.get(str(key).lower())
+                if field_id is None:
+                    continue
+            values[field_id] = _json.dumps(value)
+        if values:
+            try:
+                store.fill_ai_case_field_values(email_id, values)
+            except Exception:  # noqa: BLE001 - field persistence must not block
+                pass
+
+    return ProcessResponse(case=saved)
 
 
 def _record_usage(observer: Observer, run_id: int | None, result) -> None:
@@ -327,3 +374,39 @@ def process_all_emails(
             failed.append(email_id)
 
     return {"queued": len(pending), "processed": processed, "failed": failed}
+
+
+def load_classifier_settings(mailbox_id: int | None):
+    """Resolve LLM settings for classification, honouring per-mailbox overrides.
+
+    Mirrors the CrewAI per-stage override behaviour: the mailbox's
+    classifier config / temperature / max_tokens win over the active global
+    AI config.
+    """
+    from email_assistant.core.stage_defaults import effective_stage_settings
+    from email_assistant.service import load_llm_settings
+
+    settings = load_llm_settings()
+    overrides: dict = {}
+    if mailbox_id is not None:
+        from email_assistant.core.settings_store import SettingsStore
+
+        mailbox = SettingsStore().get_mailbox(mailbox_id)
+        if mailbox:
+            if mailbox.get("classifier_config_id"):
+                from email_assistant.service import LLMSettings
+
+                config = SettingsStore().get_ai_config(
+                    int(mailbox["classifier_config_id"]), mask_secrets=False
+                )
+                if config:
+                    settings = LLMSettings.from_generic(config)
+            stage = SettingsStore().get_stage_settings("classification")
+            overrides = effective_stage_settings("classification", stage)
+
+    updates: dict = {}
+    if overrides.get("temperature") is not None:
+        updates["temperature"] = float(overrides["temperature"])
+    if overrides.get("max_tokens") is not None:
+        updates["max_tokens"] = int(overrides["max_tokens"])
+    return settings.model_copy(update=updates) if updates else settings

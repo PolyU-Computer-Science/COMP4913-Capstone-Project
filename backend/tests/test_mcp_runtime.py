@@ -9,11 +9,13 @@ from backend.app.main import app
 from backend.app.store import store
 from email_assistant.core.mcp_runtime import MCPClientManager
 from email_assistant.core.mcp_transport import (
+    MCPServerNotAllowed,
     MCPConnectionError,
     MCPProtocolError,
     MCPToolError,
     MCPTimeoutError,
     StreamableHttpTransport,
+    validate_server_url,
 )
 from email_assistant.core.observability_store import ObservabilityStore
 from email_assistant.core.settings_store import SettingsStore
@@ -72,6 +74,95 @@ def test_transport_lists_tools() -> None:
     tools = transport.list_tools("https://example.com/mcp")
     assert len(tools) == 1
     assert tools[0]["name"] == "mtr_get_station"
+
+
+# ---- SSRF guard tests ----
+
+
+def test_ssrf_rejects_non_https() -> None:
+    with pytest.raises(MCPServerNotAllowed):
+        validate_server_url("http://example.com/mcp")
+    with pytest.raises(MCPServerNotAllowed):
+        validate_server_url("ftp://example.com")
+    with pytest.raises(MCPServerNotAllowed):
+        validate_server_url("not a url")
+
+
+def test_ssrf_rejects_loopback_and_private(monkeypatch) -> None:
+    monkeypatch.delenv("ALLOWED_MCP_SERVERS", raising=False)
+
+    import email_assistant.core.mcp_transport as module
+
+    def fake_getaddrinfo(ip):
+        def _getaddrinfo(host, port):
+            return [(None, None, None, None, (ip, 0))]
+
+        return _getaddrinfo
+
+    monkeypatch.setattr(
+        module.socket, "getaddrinfo", fake_getaddrinfo("127.0.0.1")
+    )
+    with pytest.raises(MCPServerNotAllowed):
+        validate_server_url("https://internal.example.com/mcp")
+
+    monkeypatch.setattr(
+        module.socket, "getaddrinfo", fake_getaddrinfo("192.168.1.10")
+    )
+    with pytest.raises(MCPServerNotAllowed):
+        validate_server_url("https://intranet.example.com/mcp")
+
+    monkeypatch.setattr(
+        module.socket, "getaddrinfo", fake_getaddrinfo("169.254.169.254")
+    )
+    with pytest.raises(MCPServerNotAllowed):
+        validate_server_url("https://metadata.example.com/mcp")
+
+
+def test_ssrf_allows_public_host(monkeypatch) -> None:
+    monkeypatch.delenv("ALLOWED_MCP_SERVERS", raising=False)
+
+    import email_assistant.core.mcp_transport as module
+
+    def fake_getaddrinfo(host, port):
+        return [(None, None, None, None, ("93.184.216.34", 0))]
+
+    monkeypatch.setattr(module.socket, "getaddrinfo", fake_getaddrinfo)
+    assert (
+        validate_server_url("https://example.com/mcp")
+        == "https://example.com/mcp"
+    )
+
+
+def test_ssrf_allowlist_bypasses_private_check(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "ALLOWED_MCP_SERVERS", "https://localhost.example/mcp/"
+    )
+
+    import email_assistant.core.mcp_transport as module
+
+    def fake_getaddrinfo(host, port):
+        return [(None, None, None, None, ("127.0.0.1", 0))]
+
+    monkeypatch.setattr(module.socket, "getaddrinfo", fake_getaddrinfo)
+    assert (
+        validate_server_url("https://localhost.example/mcp/")
+        == "https://localhost.example/mcp/"
+    )
+
+
+def test_ssrf_allowlist_never_relaxes_https(monkeypatch) -> None:
+    monkeypatch.setenv("ALLOWED_MCP_SERVERS", "http://localhost.example/mcp/")
+    with pytest.raises(MCPServerNotAllowed):
+        validate_server_url("http://localhost.example/mcp/")
+
+
+def test_transport_rejects_disallowed_server_before_request() -> None:
+    """The transport must refuse to make any request to a non-public host."""
+    http = _FakeHttpClient([])
+    transport = StreamableHttpTransport(transport=http)
+    with pytest.raises(MCPServerNotAllowed):
+        transport.list_tools("http://127.0.0.1:9999/mcp")
+    assert http.calls == []
 
 
 def test_transport_server_error_raises() -> None:

@@ -92,6 +92,31 @@ class EmailAssistant:
             context=[self.classify_email_task()],
         )
 
+    def draft_only_crew(self) -> Crew:
+        """Creates a drafting-only crew.
+
+        Used when classification already ran through the structured runtime
+        (``StructuredClassifier``): the validated classification JSON is
+        interpolated into the draft prompt via the ``classification`` input,
+        so no in-crew classifier call is needed.
+        """
+        return Crew(
+            agents=[self.drafter()],
+            tasks=[
+                Task(
+                    description=self._stage("draft")["prompt"],
+                    expected_output=(
+                        "The reply body text only, plain text, ready to send. "
+                        "Start with the greeting and end with a sign-off, in "
+                        "the same language as the sender's latest message."
+                    ),
+                    agent=self.drafter(),
+                )
+            ],
+            process=Process.sequential,
+            verbose=True,
+        )
+
     def crew(self) -> Crew:
         """Creates the EmailAssistant crew"""
         return Crew(

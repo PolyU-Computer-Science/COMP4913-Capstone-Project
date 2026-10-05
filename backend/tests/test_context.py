@@ -31,17 +31,23 @@ def _reset(tmp_path, monkeypatch):
 
 
 def _fake_kickoff(self, inputs=None, **kwargs):  # noqa: ANN001
-    # Echo a topic that maps to a known topic name.
-    classification = SimpleNamespace(
-        model_dump=lambda: {
-            "category": "question",
-            "topic": "password_reset",
-            "priority": "normal",
-            "summary": "summary",
-            "custom": {},
-        }
+    return SimpleNamespace(raw="Draft")
+
+
+def _fake_classify(self, email_content, topics, fields=None):  # noqa: ANN001
+    from email_assistant.core.structured_classification import (
+        ClassificationOutcome,
     )
-    return SimpleNamespace(pydantic=classification, raw="Draft")
+
+    # Echo a topic that maps to a known topic name.
+    return ClassificationOutcome(
+        category="question",
+        topic="password_reset",
+        priority="normal",
+        summary="summary",
+        structured_valid=True,
+        attempts=1,
+    )
 
 
 def _create_mailbox(name: str) -> int:
@@ -76,6 +82,9 @@ def _seed_and_process(monkeypatch, mailbox_id: int, topic: str) -> str:
     import crewai
 
     monkeypatch.setattr(crewai.Crew, "kickoff", _fake_kickoff)
+    from email_assistant.core.structured_classification import StructuredClassifier
+
+    monkeypatch.setattr(StructuredClassifier, "classify", _fake_classify)
     email_id = _seed_email(monkeypatch, mailbox_id)
     client.post(f"/api/emails/{email_id}/process")
     return email_id
@@ -138,17 +147,23 @@ def test_invalid_topic_is_not_resolved_to_a_topic_id(monkeypatch) -> None:
     monkeypatch.setattr(
         crewai.Crew,
         "kickoff",
-        lambda self, inputs=None, **kwargs: SimpleNamespace(
-            pydantic=SimpleNamespace(
-                model_dump=lambda: {
-                    "category": "question",
-                    "topic": "payment_cancellation_dispute",
-                    "priority": "normal",
-                    "summary": "s",
-                    "custom": {},
-                }
-            ),
-            raw="Draft",
+        lambda self, inputs=None, **kwargs: SimpleNamespace(raw="Draft"),
+    )
+    from email_assistant.core.structured_classification import (
+        ClassificationOutcome,
+        StructuredClassifier,
+    )
+
+    monkeypatch.setattr(
+        StructuredClassifier,
+        "classify",
+        lambda self, email_content, topics, fields=None: ClassificationOutcome(
+            category="question",
+            topic="payment_cancellation_dispute",
+            priority="normal",
+            summary="s",
+            structured_valid=True,
+            attempts=1,
         ),
     )
 

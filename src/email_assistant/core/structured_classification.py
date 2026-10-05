@@ -49,7 +49,38 @@ class ClassificationOutcome:
     error: str | None = None
 
 
-def build_classification_prompt(*, email_content: str, topics: list[dict[str, Any]]) -> tuple[str, str]:
+def _format_fields_prompt(fields: list[dict[str, Any]] | None) -> str:
+    """Render mailbox field definitions so the model knows each field id."""
+    active = [
+        f for f in (fields or []) if f.get("status", "active") == "active"
+    ]
+    if not active:
+        return ""
+    lines = ["Available fields:"]
+    for f in active:
+        type_info = str(f.get("type", "text"))
+        options = f.get("options") or ""
+        if type_info in ("select", "multiselect") and options:
+            type_info = f"{type_info} [{options}]"
+        lines.append(
+            f"- ID: {f['id']}, name: {f.get('name', '')}, type: {type_info}"
+        )
+        prompt = (f.get("prompt") or "").strip()
+        if prompt:
+            lines.append(f"  Extraction guidance: {prompt}")
+    lines.append(
+        'Return field values in "custom_fields" keyed by field ID. '
+        "If there is insufficient evidence, omit the field."
+    )
+    return "\n".join(lines)
+
+
+def build_classification_prompt(
+    *,
+    email_content: str,
+    topics: list[dict[str, Any]],
+    fields: list[dict[str, Any]] | None = None,
+) -> tuple[str, str]:
     """Return (system, user) prompts for structured classification."""
     system = (
         "You are an email classification agent. Respond with ONLY a single "
@@ -62,9 +93,11 @@ def build_classification_prompt(*, email_content: str, topics: list[dict[str, An
     topic_lines = "\n".join(
         f"- {t.get('name', '')}" for t in topics if t.get("status", "active") == "active"
     )
+    fields_block = _format_fields_prompt(fields)
     user = (
         f"Available topics:\n{topic_lines or '(none)'}\n\n"
-        f"Email:\n{email_content}\n\n"
+        + (f"{fields_block}\n\n" if fields_block else "")
+        + f"Email:\n{email_content}\n\n"
         "Return ONLY the JSON object."
     )
     return system, user
@@ -86,7 +119,7 @@ class StructuredClassifier:
         from email_assistant.core.topics import resolve_topic
 
         system, user = build_classification_prompt(
-            email_content=email_content, topics=topics
+            email_content=email_content, topics=topics, fields=fields
         )
         result: StructuredLLMResult[ClassificationContract] = self._client.generate(
             system=system, user=user, response_model=ClassificationContract

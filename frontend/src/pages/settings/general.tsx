@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, TriangleAlert } from 'lucide-react'
 
 import { PageHeader } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
-import { fetchStages, saveStages } from '@/lib/api'
+import { fetchStageMigrationWarnings, fetchStages, saveStages } from '@/lib/api'
 import type { StageConfig, StagesSettings } from '@/lib/types'
 import { toast } from 'sonner'
 
@@ -57,6 +57,7 @@ export default function GeneralPage() {
   const [draft, setDraft] = useState<StageForm>(EMPTY_STAGE)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [migrationWarnings, setMigrationWarnings] = useState<string[]>([])
 
   useEffect(() => {
     fetchStages()
@@ -66,6 +67,9 @@ export default function GeneralPage() {
       })
       .catch(() => toast.error('Failed to load settings'))
       .finally(() => setLoading(false))
+    fetchStageMigrationWarnings()
+      .then(setMigrationWarnings)
+      .catch(() => setMigrationWarnings([]))
   }, [])
 
   function setStage(
@@ -105,6 +109,16 @@ export default function GeneralPage() {
           </Button>
         }
       />
+
+      {migrationWarnings.map((warning) => (
+        <div
+          key={warning}
+          className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400"
+        >
+          <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+          <span>{warning}</span>
+        </div>
+      ))}
 
       {loading ? (
         <div className="flex items-center gap-2 py-6 text-muted-foreground">

@@ -116,6 +116,7 @@ export default function Cases() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Case</TableHead>
+                  <TableHead>Subject</TableHead>
                   <TableHead>Mailbox</TableHead>
                   <TableHead>Category</TableHead>
                   <TableHead>Topic</TableHead>
@@ -135,8 +136,11 @@ export default function Cases() {
                     <TableCell className="font-medium">
                       #{item.id.slice(0, 6).toUpperCase()}
                     </TableCell>
-                    <TableCell className="max-w-40 truncate">
+                    <TableCell className="max-w-56 truncate">
                       {item.email.subject}
+                    </TableCell>
+                    <TableCell className="max-w-32 truncate">
+                      {mailboxes.find((m) => m.id === item.mailbox_id)?.name ?? '—'}
                     </TableCell>
                     <TableCell>
                       <CategoryBadge category={item.classification.category} />

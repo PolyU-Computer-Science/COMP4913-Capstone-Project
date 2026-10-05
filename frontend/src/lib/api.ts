@@ -176,6 +176,13 @@ export async function saveStages(
   return data
 }
 
+export async function fetchStageMigrationWarnings(): Promise<string[]> {
+  const { data } = await client.get<string[]>(
+    '/settings/stages/migration-warnings',
+  )
+  return data
+}
+
 export async function fetchMailAccounts(): Promise<MailAccount[]> {
   const { data } = await client.get<MailAccount[]>('/settings/mail')
   return data

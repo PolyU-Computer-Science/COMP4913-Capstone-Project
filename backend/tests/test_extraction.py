@@ -216,17 +216,24 @@ def test_ai_extraction_fills_empty_field_only() -> None:
     monkeypatch.setattr(
         crewai.Crew,
         "kickoff",
-        lambda self, inputs=None, **kwargs: SimpleNamespace(
-            pydantic=SimpleNamespace(
-                model_dump=lambda: {
-                    "category": "question",
-                    "topic": "refund",
-                    "priority": "normal",
-                    "summary": "s",
-                    "custom": {"order_id": "ORD-1"},
-                }
-            ),
-            raw="Draft",
+        lambda self, inputs=None, **kwargs: SimpleNamespace(raw="Draft"),
+    )
+    from email_assistant.core.structured_classification import (
+        ClassificationOutcome,
+        StructuredClassifier,
+    )
+
+    monkeypatch.setattr(
+        StructuredClassifier,
+        "classify",
+        lambda self, email_content, topics, fields=None: ClassificationOutcome(
+            category="question",
+            topic="refund",
+            priority="normal",
+            summary="s",
+            custom_fields={"order_id": "ORD-1"},
+            structured_valid=True,
+            attempts=1,
         ),
     )
 

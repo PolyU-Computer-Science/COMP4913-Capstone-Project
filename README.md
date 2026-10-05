@@ -504,6 +504,18 @@ The system follows a **least-authority** design: AI components may propose
 actions, while external side effects remain under deterministic application and
 human control.
 
+**Deployment boundary:** this is a local single-user prototype. The API binds
+to `127.0.0.1` by default and has no multi-user authentication; it must not be
+exposed to a network as-is. Full authentication is planned together with the
+Teams / Agents work, at which point approvals will be attributable to a
+specific user.
+
+**MCP SSRF guard:** connector server URLs must be `https://` on public hosts;
+loopback, private, link-local, and reserved addresses are rejected before any
+request is made. An explicit allowlist (`ALLOWED_MCP_SERVERS`) can exempt
+specific endpoints (default: the demo MTR server) but never relaxes the TLS
+requirement.
+
 ---
 
 ## Evaluation Methodology
@@ -758,10 +770,11 @@ email_assistant/
         │   ├── chunking.py         # Knowledge chunking
         │   ├── embeddings.py       # Embedding client abstraction + compat
         │   ├── knowledge_store.py  # Knowledge documents + chunks (SQLite; Chroma planned)
-        │   ├── vector_store.py     # VectorStore abstraction (SQLite now, Chroma planned)
         │   ├── knowledge_indexing.py # Indexing service (atomic replace)
         │   ├── knowledge_retrieval.py # Mailbox-scoped retrieval
         │   ├── rag.py              # Retrieval query builder + context format
+        │   ├── structured_llm.py   # OpenAI-compatible structured LLM client
+        │   ├── structured_classification.py # Structured classifier (5-layer contract)
         │   ├── mcp_runtime.py      # MCP client manager (transport abstraction)
         │   ├── tool_permissions.py # Default-deny tool permissions
         │   ├── observability.py    # Observer context manager
@@ -772,7 +785,6 @@ email_assistant/
         │   ├── stage_defaults.py   # Stage defaults + DB override merging
         │   ├── mailbox_seeds.py    # Default mailbox seed (Gmail + study/work topics + fields)
         │   ├── openai_embeddings.py # OpenAI-compatible embedding client (multi-provider)
-        │   ├── structured_llm.py   # OpenAI-compatible structured LLM client
         │   └── structured_classification.py # Structured classifier + business validation
         └── tools/                  # (CrewAI tool package; real tooling via MCP runtime)
 ```

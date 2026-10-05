@@ -72,6 +72,49 @@ def test_send_reply_uses_ssl_on_465(monkeypatch) -> None:
     assert _FakeSMTP.instances[0].sent[0]["Subject"] == "Re: Hi"
 
 
+def test_send_reply_respects_smtp_security_setting(monkeypatch) -> None:
+    # Explicit starttls on a non-465 port.
+    _FakeSMTP.instances = []
+    monkeypatch.setattr("email_assistant.core.email_sender.smtplib.SMTP", _FakeSMTP)
+    send_reply(
+        {**ACCOUNT, "smtp_security": "starttls"},
+        "to@example.com",
+        "Hi",
+        "Body",
+    )
+    assert _FakeSMTP.instances[0].started_tls is True
+
+    # Explicit SSL on a non-465 port must use SMTP_SSL, not the port heuristic.
+    _FakeSMTP.instances = []
+    monkeypatch.setattr(
+        "email_assistant.core.email_sender.smtplib.SMTP_SSL", _FakeSMTP
+    )
+    send_reply(
+        {**ACCOUNT, "smtp_port": 587, "smtp_security": "ssl"},
+        "to@example.com",
+        "Hi",
+        "Body",
+    )
+    assert len(_FakeSMTP.instances) == 1
+    assert _FakeSMTP.instances[0].port == 587
+
+
+def test_send_reply_unencrypted_requires_explicit_none(monkeypatch) -> None:
+    _FakeSMTP.instances = []
+    monkeypatch.setattr("email_assistant.core.email_sender.smtplib.SMTP", _FakeSMTP)
+    send_reply(
+        {**ACCOUNT, "smtp_security": "none"}, "to@example.com", "Hi", "Body"
+    )
+    assert _FakeSMTP.instances[0].started_tls is False
+
+    # Unknown values fall back to the port heuristic (587 -> starttls).
+    _FakeSMTP.instances = []
+    send_reply(
+        {**ACCOUNT, "smtp_security": "bogus"}, "to@example.com", "Hi", "Body"
+    )
+    assert _FakeSMTP.instances[0].started_tls is True
+
+
 def test_send_reply_missing_address_raises() -> None:
     with pytest.raises(ValueError):
         send_reply({**ACCOUNT, "address": ""}, "to@example.com", "Hi", "Body")

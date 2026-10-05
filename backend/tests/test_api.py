@@ -34,6 +34,66 @@ def _fake_kickoff(self, inputs=None, **kwargs):  # noqa: ANN001
     return SimpleNamespace(pydantic=classification, raw="Draft reply text")
 
 
+def _fake_structured_generate(
+    self, *, system, user, response_model
+):  # noqa: ANN001
+    data = response_model(
+        category="question",
+        topic="meeting",
+        priority="normal",
+        summary="A meeting request",
+        custom_fields={},
+    )
+    from email_assistant.core.structured_llm import StructuredLLMResult
+
+    return StructuredLLMResult(
+        data=data,
+        raw='{"category": "question"}',
+        valid=True,
+        attempts=1,
+        prompt_tokens=100,
+        completion_tokens=50,
+        total_tokens=150,
+    )
+
+
+def _mock_ai_pipeline(monkeypatch: pytest.MonkeyPatch, draft: str = "Draft reply text") -> None:
+    """Mock both classification (structured runtime) and drafting (crew)."""
+    import crewai
+    from email_assistant.core.structured_classification import (
+        StructuredClassifier,
+    )
+
+    def fake_classify(self, email_content, topics, fields=None):  # noqa: ANN001
+        from email_assistant.core.structured_classification import (
+            ClassificationOutcome,
+        )
+
+        return ClassificationOutcome(
+            category="question",
+            topic="meeting",
+            topic_id=None,
+            topic_resolved=False,
+            priority="normal",
+            summary="A meeting request",
+            custom_fields={},
+            structured_valid=True,
+            attempts=1,
+            prompt_tokens=100,
+            completion_tokens=50,
+            total_tokens=150,
+        )
+
+    monkeypatch.setattr(StructuredClassifier, "classify", fake_classify)
+    monkeypatch.setattr(
+        crewai.Crew,
+        "kickoff",
+        lambda self, inputs=None, **kwargs: SimpleNamespace(
+            raw=draft, tasks_output=[]
+        ),
+    )
+
+
 @pytest.fixture(autouse=True)
 def _reset_store() -> None:
     store.clear()
@@ -106,9 +166,7 @@ def test_list_emails_is_read_only(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_process_email_returns_case(monkeypatch: pytest.MonkeyPatch) -> None:
-    import crewai
-
-    monkeypatch.setattr(crewai.Crew, "kickoff", _fake_kickoff)
+    _mock_ai_pipeline(monkeypatch)
     email_id = _sync_sample(monkeypatch)[0]
 
     response = client.post(f"/api/emails/{email_id}/process")
@@ -128,9 +186,7 @@ def test_process_missing_email_returns_404() -> None:
 def test_process_all_processes_pending_emails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import crewai
-
-    monkeypatch.setattr(crewai.Crew, "kickoff", _fake_kickoff)
+    _mock_ai_pipeline(monkeypatch)
     _sync_sample(monkeypatch)
     # Add a second pending email.
     import email_assistant.core
@@ -168,9 +224,7 @@ def test_process_all_processes_pending_emails(
 def test_process_all_continues_after_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import crewai
-
-    monkeypatch.setattr(crewai.Crew, "kickoff", _fake_kickoff)
+    _mock_ai_pipeline(monkeypatch)
     _sync_sample(monkeypatch)
     import email_assistant.core
 
@@ -188,15 +242,36 @@ def test_process_all_continues_after_failure(
     )
     client.post("/api/emails/sync")
 
+    import crewai
+
     calls = {"n": 0}
+    from email_assistant.core.structured_classification import (
+        ClassificationOutcome,
+        StructuredClassifier,
+    )
 
     def flaky_kickoff(self, inputs=None, **kwargs):  # noqa: ANN001
         calls["n"] += 1
         if calls["n"] == 1:
             raise RuntimeError("LLM down")
-        return _fake_kickoff(self, inputs=inputs, **kwargs)
+        return SimpleNamespace(raw="Draft reply text", tasks_output=[])
 
     monkeypatch.setattr(crewai.Crew, "kickoff", flaky_kickoff)
+
+    def flaky_classify(self, email_content, topics, fields=None):  # noqa: ANN001
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("LLM down")
+        return ClassificationOutcome(
+            category="question",
+            topic="meeting",
+            priority="normal",
+            summary="A meeting request",
+            structured_valid=True,
+            attempts=1,
+        )
+
+    monkeypatch.setattr(StructuredClassifier, "classify", flaky_classify)
 
     body = client.post("/api/emails/process-all").json()
     assert body["queued"] == 2
@@ -212,9 +287,7 @@ def test_process_all_continues_after_failure(
 def test_cases_and_stats_reflect_processed_email(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import crewai
-
-    monkeypatch.setattr(crewai.Crew, "kickoff", _fake_kickoff)
+    _mock_ai_pipeline(monkeypatch)
     email_id = _sync_sample(monkeypatch)[0]
 
     client.post(f"/api/emails/{email_id}/process")
@@ -291,14 +364,16 @@ def test_process_returns_422_when_classification_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import crewai
+    from email_assistant.core.structured_classification import StructuredClassifier
 
-    monkeypatch.setattr(
-        crewai.Crew,
-        "kickoff",
-        lambda self, inputs=None, **kwargs: SimpleNamespace(
-            pydantic=None, raw=""
-        ),
-    )
+    def failing_classify(self, email_content, topics, fields=None):  # noqa: ANN001
+        from email_assistant.core.structured_classification import (
+            ClassificationOutcome,
+        )
+
+        return ClassificationOutcome(category="", error="no valid output")
+
+    monkeypatch.setattr(StructuredClassifier, "classify", failing_classify)
     email_id = _sync_sample(monkeypatch)[0]
 
     response = client.post(f"/api/emails/{email_id}/process")
@@ -311,19 +386,30 @@ def test_process_returns_422_when_classification_fails(
 def test_process_recovers_python_literal_classification(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from email_assistant.core.structured_classification import (
+        ClassificationOutcome,
+        StructuredClassifier,
+    )
+
+    def fallback_classify(self, email_content, topics, fields=None):  # noqa: ANN001
+        return ClassificationOutcome(
+            category="spam",
+            topic="phishing_alert",
+            priority="low",
+            summary="A suspicious email",
+            structured_valid=False,
+            fallback_parser_used=True,
+            attempts=2,
+        )
+
+    monkeypatch.setattr(StructuredClassifier, "classify", fallback_classify)
     import crewai
 
-    raw = (
-        "category='spam' topic='phishing_alert' priority='low' "
-        "urgency_score=2 summary='A suspicious email' custom={}"
-    )
     monkeypatch.setattr(
         crewai.Crew,
         "kickoff",
         lambda self, inputs=None, **kwargs: SimpleNamespace(
-            pydantic=None,
-            raw="Draft reply text",
-            tasks_output=[SimpleNamespace(raw=raw)],
+            raw="Draft reply text", tasks_output=[]
         ),
     )
     email_id = _sync_sample(monkeypatch)[0]
@@ -337,9 +423,7 @@ def test_process_recovers_python_literal_classification(
 
 
 def test_update_case_draft(monkeypatch: pytest.MonkeyPatch) -> None:
-    import crewai
-
-    monkeypatch.setattr(crewai.Crew, "kickoff", _fake_kickoff)
+    _mock_ai_pipeline(monkeypatch)
     email_id = _sync_sample(monkeypatch)[0]
     client.post(f"/api/emails/{email_id}/process")
 
@@ -354,9 +438,7 @@ def test_update_case_draft(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_send_case(monkeypatch: pytest.MonkeyPatch) -> None:
-    import crewai
-
-    monkeypatch.setattr(crewai.Crew, "kickoff", _fake_kickoff)
+    _mock_ai_pipeline(monkeypatch)
     email_id = _sync_sample(monkeypatch)[0]
     client.post(f"/api/emails/{email_id}/process")
 
@@ -367,21 +449,18 @@ def test_send_case(monkeypatch: pytest.MonkeyPatch) -> None:
         sender_module,
         "send_reply",
         lambda account, to, subject, body: sent_calls.append(
-            {"to": to, "subject": subject, "body": body}
+            {"account": account, "to": to, "subject": subject, "body": body}
         ),
     )
-    import email_assistant.core.settings_store as settings_module
-
-    monkeypatch.setattr(
-        settings_module.SettingsStore,
-        "get_enabled_mail_account",
-        lambda self: {
-            "address": "support@example.com",
-            "smtp_host": "smtp.example.com",
-            "smtp_port": 587,
-            "password": "pw",
-        },
+    # Give the case's own mailbox an SMTP config (used for sending).
+    mailbox_id = client.get("/api/mailboxes").json()[0]["id"]
+    client.put(
+        f"/api/mailboxes/{mailbox_id}",
+        json={"name": "Support", "address": "s@x.com", "smtp_host": "smtp.s-x.com", "smtp_port": 587},
     )
+    from email_assistant.core.settings_store import SettingsStore
+
+    SettingsStore().set_mailbox_password(mailbox_id, "pw")
 
     response = client.post(f"/api/cases/{email_id}/send")
     assert response.status_code == 200
@@ -392,22 +471,60 @@ def test_send_case(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(sent_calls) == 1
     assert sent_calls[0]["to"] == "sarah.chen@example.com"
     assert sent_calls[0]["subject"] == "Meeting Request"
+    # Sent from the case's own mailbox, not a global account.
+    assert sent_calls[0]["account"]["address"] == "s@x.com"
 
 
-def test_send_case_requires_mail_account(monkeypatch: pytest.MonkeyPatch) -> None:
-    import crewai
-
-    monkeypatch.setattr(crewai.Crew, "kickoff", _fake_kickoff)
+def test_send_case_uses_own_mailbox_not_global(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Multi-mailbox isolation: a case must be sent from its own mailbox."""
+    _mock_ai_pipeline(monkeypatch)
     email_id = _sync_sample(monkeypatch)[0]
     client.post(f"/api/emails/{email_id}/process")
 
-    import email_assistant.core.settings_store as settings_module
+    # A different mailbox is globally "enabled" — it must NOT be used.
+    import email_assistant.core.email_sender as sender_module
 
+    sent_calls: list[dict] = []
     monkeypatch.setattr(
-        settings_module.SettingsStore,
-        "get_enabled_mail_account",
-        lambda self: None,
+        sender_module,
+        "send_reply",
+        lambda account, to, subject, body: sent_calls.append({"account": account}),
     )
+    # Configure SMTP on the case's own mailbox.
+    mailbox_id = client.get("/api/mailboxes").json()[0]["id"]
+    client.put(
+        f"/api/mailboxes/{mailbox_id}",
+        json={"name": "Support", "address": "s@x.com", "smtp_host": "smtp.s-x.com", "smtp_port": 587},
+    )
+    from email_assistant.core.settings_store import SettingsStore
 
+    SettingsStore().set_mailbox_password(mailbox_id, "pw")
+
+    # A different mailbox also has SMTP configured — it must NOT be used.
+    client.post(
+        "/api/mailboxes",
+        json={
+            "name": "Sales",
+            "address": "sales@x.com",
+            "smtp_host": "smtp.sales-x.com",
+            "smtp_port": 587,
+        },
+    )
+    sales_id = client.get("/api/mailboxes").json()[-1]["id"]
+    SettingsStore().set_mailbox_password(sales_id, "pw")
+
+    response = client.post(f"/api/cases/{email_id}/send")
+    assert response.status_code == 200
+    assert sent_calls[0]["account"]["address"] == "s@x.com"
+
+
+def test_send_case_requires_mailbox_smtp(monkeypatch: pytest.MonkeyPatch) -> None:
+    _mock_ai_pipeline(monkeypatch)
+    email_id = _sync_sample(monkeypatch)[0]
+    client.post(f"/api/emails/{email_id}/process")
+
+    # The case's mailbox has no SMTP host configured.
     response = client.post(f"/api/cases/{email_id}/send")
     assert response.status_code == 400

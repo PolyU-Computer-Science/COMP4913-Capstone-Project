@@ -73,6 +73,7 @@ def run() -> None:
     store = SettingsStore()
     store.ensure_default_ai_config()
     store.ensure_default_stage_settings()
+    store.migrate_stage_seeds()
     store.ensure_default_mailbox()
 
     # Backfill any legacy emails that predate mailbox scoping.
@@ -85,6 +86,9 @@ def run() -> None:
     except Exception:  # noqa: BLE001 - migration must never block startup
         print("WARNING: legacy email migration failed; skipping.")
 
-    host = os.environ.get("API_HOST", "0.0.0.0")
+    # Default to loopback: this is a local single-user prototype. The API can
+    # send email, change settings, and execute MCP tools, so it must not be
+    # exposed to the network without authentication.
+    host = os.environ.get("API_HOST", "127.0.0.1")
     port = int(os.environ.get("API_PORT", "8000"))
     uvicorn.run("backend.app.main:app", host=host, port=port, reload=True)

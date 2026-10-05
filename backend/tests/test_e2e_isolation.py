@@ -37,22 +37,32 @@ def _reset(tmp_path, monkeypatch):
 
 
 def _fake_kickoff(self, inputs=None, **kwargs):  # noqa: ANN001
-    classification = SimpleNamespace(
-        model_dump=lambda: {
-            "category": "question",
-            "topic": "refund",
-            "priority": "normal",
-            "summary": "refund request",
-            "custom": {},
-        }
+    return SimpleNamespace(raw="Draft reply")
+
+
+def _fake_classify(self, email_content, topics, fields=None):  # noqa: ANN001
+    from email_assistant.core.structured_classification import (
+        ClassificationOutcome,
     )
-    return SimpleNamespace(pydantic=classification, raw="Draft reply")
+
+    return ClassificationOutcome(
+        category="question",
+        topic="refund",
+        priority="normal",
+        summary="refund request",
+        custom_fields={},
+        structured_valid=True,
+        attempts=1,
+    )
 
 
 def test_full_pipeline_is_mailbox_isolated(monkeypatch) -> None:
     import crewai
 
     monkeypatch.setattr(crewai.Crew, "kickoff", _fake_kickoff)
+    from email_assistant.core.structured_classification import StructuredClassifier
+
+    monkeypatch.setattr(StructuredClassifier, "classify", _fake_classify)
 
     # Build Support mailbox with refund topic + refund knowledge.
     support_id = client.post(

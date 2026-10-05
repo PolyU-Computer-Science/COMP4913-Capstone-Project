@@ -46,16 +46,33 @@ def _reset(tmp_path, monkeypatch):
 
 
 def _fake_kickoff(self, inputs=None, **kwargs):  # noqa: ANN001
-    classification = SimpleNamespace(
-        model_dump=lambda: {
-            "category": "question",
-            "topic": "refund",
-            "priority": "normal",
-            "summary": "s",
-            "custom": {},
-        }
+    return SimpleNamespace(raw="Draft reply")
+
+
+def _fake_classify(self, email_content, topics, fields=None):  # noqa: ANN001
+    from email_assistant.core.structured_classification import (
+        ClassificationOutcome,
     )
-    return SimpleNamespace(pydantic=classification, raw="Draft reply")
+
+    return ClassificationOutcome(
+        category="question",
+        topic="refund",
+        topic_resolved=True,
+        priority="normal",
+        summary="s",
+        custom_fields={},
+        structured_valid=True,
+        attempts=1,
+    )
+
+
+def _mock_pipeline(monkeypatch) -> None:
+    import crewai
+
+    monkeypatch.setattr(crewai.Crew, "kickoff", _fake_kickoff)
+    from email_assistant.core.structured_classification import StructuredClassifier
+
+    monkeypatch.setattr(StructuredClassifier, "classify", _fake_classify)
 
 
 def _seed_email(monkeypatch, mailbox_id, email):
@@ -70,9 +87,7 @@ def _seed_email(monkeypatch, mailbox_id, email):
 
 
 def test_full_support_sales_pipeline_isolation(monkeypatch) -> None:
-    import crewai
-
-    monkeypatch.setattr(crewai.Crew, "kickoff", _fake_kickoff)
+    _mock_pipeline(monkeypatch)
 
     # Support mailbox.
     support_id = client.post(
@@ -146,13 +161,13 @@ def test_imap_failure_returns_502(monkeypatch) -> None:
 
 
 def test_classifier_failure_marks_email_failed(monkeypatch) -> None:
-    import crewai
     import email_assistant.core
+    from email_assistant.core.structured_classification import StructuredClassifier
 
     monkeypatch.setattr(
-        crewai.Crew,
-        "kickoff",
-        lambda self, inputs=None, **kwargs: (_ for _ in ()).throw(RuntimeError("LLM timeout")),
+        StructuredClassifier,
+        "classify",
+        lambda self, email_content, topics, fields=None: (_ for _ in ()).throw(RuntimeError("LLM timeout")),
     )
     mailbox_id = client.post(
         "/api/mailboxes", json={"name": "Support", "address": "s@x.com"}
@@ -178,11 +193,10 @@ def test_classifier_failure_marks_email_failed(monkeypatch) -> None:
 
 
 def test_smtp_failure_does_not_mark_sent(monkeypatch) -> None:
-    import crewai
     import email_assistant.core
     import email_assistant.core.email_sender as sender_module
 
-    monkeypatch.setattr(crewai.Crew, "kickoff", _fake_kickoff)
+    _mock_pipeline(monkeypatch)
     monkeypatch.setattr(
         email_assistant.core,
         "fetch_emails",
@@ -203,10 +217,12 @@ def test_smtp_failure_does_not_mark_sent(monkeypatch) -> None:
     )
     import email_assistant.core.settings_store as settings_module
 
-    monkeypatch.setattr(
-        settings_module.SettingsStore,
-        "get_enabled_mail_account",
-        lambda self: {"address": "s@x.com", "smtp_host": "smtp", "smtp_port": 587, "password": "pw"},
+    from email_assistant.core.settings_store import SettingsStore
+
+    SettingsStore().set_mailbox_password(mailbox_id, "pw")
+    client.put(
+        f"/api/mailboxes/{mailbox_id}",
+        json={"name": "Support", "address": "s@x.com", "smtp_host": "smtp", "smtp_port": 587},
     )
 
     response = client.post(f"/api/cases/{email_id}/send")
@@ -218,10 +234,9 @@ def test_smtp_failure_does_not_mark_sent(monkeypatch) -> None:
 
 
 def test_manual_field_not_overwritten_by_processing(monkeypatch) -> None:
-    import crewai
     import email_assistant.core
 
-    monkeypatch.setattr(crewai.Crew, "kickoff", _fake_kickoff)
+    _mock_pipeline(monkeypatch)
     monkeypatch.setattr(
         email_assistant.core,
         "fetch_emails",

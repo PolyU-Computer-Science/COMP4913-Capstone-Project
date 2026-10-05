@@ -200,17 +200,23 @@ def test_draft_stores_knowledge_provenance(monkeypatch) -> None:
     monkeypatch.setattr(
         crewai.Crew,
         "kickoff",
-        lambda self, inputs=None, **kwargs: SimpleNamespace(
-            pydantic=SimpleNamespace(
-                model_dump=lambda: {
-                    "category": "question",
-                    "topic": "refund",
-                    "priority": "normal",
-                    "summary": "s",
-                    "custom": {},
-                }
-            ),
-            raw="Draft reply",
+        lambda self, inputs=None, **kwargs: SimpleNamespace(raw="Draft reply"),
+    )
+    from email_assistant.core.structured_classification import (
+        ClassificationOutcome,
+        StructuredClassifier,
+    )
+
+    monkeypatch.setattr(
+        StructuredClassifier,
+        "classify",
+        lambda self, email_content, topics, fields=None: ClassificationOutcome(
+            category="question",
+            topic="refund",
+            priority="normal",
+            summary="s",
+            structured_valid=True,
+            attempts=1,
         ),
     )
 
@@ -254,17 +260,23 @@ def test_no_rag_empty_retrieval_still_drafts(monkeypatch) -> None:
     monkeypatch.setattr(
         crewai.Crew,
         "kickoff",
-        lambda self, inputs=None, **kwargs: SimpleNamespace(
-            pydantic=SimpleNamespace(
-                model_dump=lambda: {
-                    "category": "question",
-                    "topic": "refund",
-                    "priority": "normal",
-                    "summary": "s",
-                    "custom": {},
-                }
-            ),
-            raw="Draft reply",
+        lambda self, inputs=None, **kwargs: SimpleNamespace(raw="Draft reply"),
+    )
+    from email_assistant.core.structured_classification import (
+        ClassificationOutcome,
+        StructuredClassifier,
+    )
+
+    monkeypatch.setattr(
+        StructuredClassifier,
+        "classify",
+        lambda self, email_content, topics, fields=None: ClassificationOutcome(
+            category="question",
+            topic="refund",
+            priority="normal",
+            summary="s",
+            structured_valid=True,
+            attempts=1,
         ),
     )
 

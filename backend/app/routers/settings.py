@@ -140,6 +140,14 @@ def get_stage_settings() -> StagesSettings:
     )
 
 
+@router.get("/stages/migration-warnings", response_model=list[str])
+def get_stage_migration_warnings() -> list[str]:
+    """Return seed-migration warnings (e.g. a custom prompt predating the
+    classification-context update). Runs the migration check once per
+    response; warnings persist until the prompt is updated."""
+    return _store().migrate_stage_seeds()
+
+
 @router.put("/stages", response_model=StagesSettings)
 def put_stage_settings(payload: StagesSettings) -> StagesSettings:
     store = _store()

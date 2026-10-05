@@ -327,6 +327,33 @@ def _message_content(body: dict) -> str:
     return str(message.get("content") or "")
 
 
+def build_structured_client_from_settings(
+    settings: Any,
+) -> OpenAICompatibleStructuredClient:
+    """Build a structured client from an ``LLMSettings`` instance.
+
+    Uses the same active AI config resolution as the CrewAI path
+    (``load_llm_settings``), so the structured runtime and the crew runtime
+    always talk to the same provider/model. Non-OpenAI-compatible providers
+    (e.g. anthropic-native) are not supported by this client.
+    """
+    provider = str(settings.provider.value if hasattr(settings.provider, "value") else settings.provider)
+    if provider not in PROVIDER_BASE_URLS:
+        raise StructuredLLMError(
+            f"Provider {provider!r} does not expose an OpenAI-compatible API"
+        )
+    base_url = settings.base_url or PROVIDER_BASE_URLS[provider]
+    return OpenAICompatibleStructuredClient(
+        api_key=settings.api_key.get_secret_value() if settings.api_key else "",
+        model=settings.model,
+        base_url=base_url,
+        timeout=settings.timeout,
+        temperature=settings.temperature,
+        max_tokens=settings.max_tokens,
+        provider=provider,
+    )
+
+
 def build_structured_client(provider: str = "openrouter") -> OpenAICompatibleStructuredClient:
     """Build a structured client for the given provider from environment variables.
 

@@ -48,13 +48,22 @@ def send_reply(
     """Send a reply via SMTP using the given mail account.
 
     ``account`` is a mail-account dict with decrypted ``password`` and the
-    ``address`` / ``smtp_host`` / ``smtp_port`` fields.
+    ``address`` / ``smtp_host`` / ``smtp_port`` / ``smtp_security`` fields.
+
+    Transport security follows the configured ``smtp_security``:
+    ``ssl`` (implicit TLS, typically port 465), ``starttls`` (upgrade after
+    connecting, typically port 587), or ``none`` (unencrypted — must be
+    configured explicitly). When ``smtp_security`` is missing, the port is
+    used as a fallback heuristic (465 → SSL, otherwise STARTTLS).
     """
     address = str(account.get("address") or "")
     host = str(account.get("smtp_host") or "")
     port = int(account.get("smtp_port") or 587)
     password = str(account.get("password") or "")
     name = str(account.get("name") or "")
+    security = str(account.get("smtp_security") or "").strip().lower()
+    if security not in ("ssl", "starttls", "none"):
+        security = "ssl" if port == 465 else "starttls"
 
     if not address or not host:
         raise ValueError("Mail account is missing address or SMTP host")
@@ -65,16 +74,21 @@ def send_reply(
     msg["Subject"] = subject if subject.startswith("Re:") else f"Re: {subject}"
     msg.set_content(strip_subject_body_labels(body))
 
-    if port == 465:
+    if security == "ssl":
         with smtplib.SMTP_SSL(host, port) as smtp:
+            if password:
+                smtp.login(address, password)
+            smtp.send_message(msg)
+    elif security == "starttls":
+        with smtplib.SMTP(host, port) as smtp:
+            smtp.ehlo()
+            smtp.starttls()
+            smtp.ehlo()
             if password:
                 smtp.login(address, password)
             smtp.send_message(msg)
     else:
         with smtplib.SMTP(host, port) as smtp:
-            smtp.ehlo()
-            smtp.starttls()
-            smtp.ehlo()
             if password:
                 smtp.login(address, password)
             smtp.send_message(msg)

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Self
 
 from dotenv import load_dotenv
-from imap_tools import MailBox, MailMessage
+from imap_tools import MailBox, MailBoxUnencrypted, MailMessage
 import os
 
 
@@ -32,6 +32,7 @@ class EmailSettings:
     password: str = ""
     folder: str = "INBOX"
     max_emails: int = 50
+    security: str = "ssl"  # ssl | none
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Self:
@@ -119,7 +120,11 @@ def fetch_via_imap(settings: EmailSettings) -> list[dict[str, str]]:
     print(f"Connecting to IMAP server: {settings.server}:{settings.port}")
     print(f"Fetching all emails from folder: {settings.folder}")
 
-    with MailBox(settings.server, port=settings.port).login(
+    # Honour the configured transport security: ``ssl`` (default) uses IMAP
+    # over TLS; ``none`` connects unencrypted (explicitly configured only).
+    use_ssl = str(settings.security or "ssl").lower() != "none"
+    client = MailBox(settings.server, port=settings.port) if use_ssl else MailBoxUnencrypted(settings.server, port=settings.port)
+    with client.login(
         settings.address,
         settings.password,
         initial_folder=settings.folder,
@@ -199,6 +204,7 @@ def _fetch_mailbox_emails(mailbox_id: int) -> list[dict[str, str]]:
         password=password,
         folder=str(mailbox.get("imap_folder") or "INBOX"),
         max_emails=int(mailbox.get("max_emails") or 50),
+        security=str(mailbox.get("imap_security") or "ssl"),
     )
 
     if not settings.address or not settings.server:

@@ -18,7 +18,6 @@ import {
 } from '@/components/ui/resizable'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { fetchCases, sendCase, updateCaseDraft } from '@/lib/api'
 import type { Case } from '@/lib/types'

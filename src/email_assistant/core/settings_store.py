@@ -524,7 +524,7 @@ class SettingsStore:
         Returns True if seeding happened. Never overwrites existing
         stage settings — user edits always win.
         """
-        from email_assistant.core.stage_seeds import STAGE_SEEDS
+        from email_assistant.core.stage_seeds import STAGE_SEEDS, STAGE_SEED_VERSION
 
         with self._lock:
             conn = self._connect()
@@ -543,10 +543,77 @@ class SettingsStore:
                                 "VALUES (?, ?)",
                                 (f"stage.{stage}.{field}", value),
                             )
+                conn.execute(
+                    "INSERT OR REPLACE INTO settings (key, value) "
+                    "VALUES ('stage_seed_version', ?)",
+                    (str(STAGE_SEED_VERSION),),
+                )
                 conn.commit()
                 return True
             finally:
                 conn.close()
+
+    def migrate_stage_seeds(self) -> list[str]:
+        """Migrate seeded stage settings to the current seed version.
+
+        Only built-in defaults are migrated; user-customized prompts are
+        never overwritten. Returns human-readable warnings for customized
+        prompts that predate the current contract (the UI can surface them).
+
+        v1 → v2: the draft prompt gained a ``{classification}`` variable so
+        the draft stage receives the structured classification context.
+        """
+        from email_assistant.core.stage_seeds import (
+            DRAFT_DEFAULTS,
+            DRAFT_DEFAULTS_V1,
+            STAGE_SEED_VERSION,
+        )
+
+        warnings: list[str] = []
+
+        with self._lock:
+            conn = self._connect()
+            try:
+                row = conn.execute(
+                    "SELECT value FROM settings WHERE key = 'stage_seed_version'"
+                ).fetchone()
+                stored_version = int(row["value"]) if row else 1
+                if stored_version >= STAGE_SEED_VERSION:
+                    return warnings
+
+                stored_prompt = (
+                    conn.execute(
+                        "SELECT value FROM settings "
+                        "WHERE key = 'stage.draft.prompt'"
+                    ).fetchone()
+                )
+                stored_prompt = stored_prompt["value"] if stored_prompt else None
+
+                if stored_prompt == DRAFT_DEFAULTS_V1["prompt"]:
+                    # Still the untouched official v1 default — safe to upgrade.
+                    conn.execute(
+                        "INSERT OR REPLACE INTO settings (key, value) "
+                        "VALUES ('stage.draft.prompt', ?)",
+                        (DRAFT_DEFAULTS["prompt"],),
+                    )
+                elif stored_prompt and "{classification}" not in stored_prompt:
+                    warnings.append(
+                        "Your custom Draft prompt predates the "
+                        "classification-context update. Add {classification} "
+                        "if you want the draft stage to receive structured "
+                        "classification context."
+                    )
+
+                conn.execute(
+                    "INSERT OR REPLACE INTO settings (key, value) "
+                    "VALUES ('stage_seed_version', ?)",
+                    (str(STAGE_SEED_VERSION),),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+        return warnings
     def get_stage_settings(self, stage: str) -> dict[str, Any]:
         with self._lock:
             conn = self._connect()
@@ -1005,6 +1072,24 @@ class SettingsStore:
         if row is None or not row["password"]:
             return None
         return self._decrypt(row["password"])
+
+    def get_mailbox_send_account(self, mailbox_id: int) -> dict[str, Any] | None:
+        """Return an SMTP account dict for sending from a specific mailbox.
+
+        Built from the mailbox's own address / SMTP settings and decrypted
+        password, so replies are always sent from the mailbox the case
+        belongs to (multi-mailbox isolation). Returns None if the mailbox
+        does not exist or has no SMTP host configured.
+        """
+        mailbox = self.get_mailbox(mailbox_id)
+        if mailbox is None:
+            return None
+
+        account = dict(mailbox)
+        account["password"] = self.get_mailbox_password(mailbox_id) or ""
+        if not account.get("smtp_host") or not account.get("address"):
+            return None
+        return account
 
     def delete_mailbox(self, mailbox_id: int) -> bool:
         with self._lock:
