@@ -58,10 +58,21 @@ def _fake_structured_generate(
 
 
 def _mock_ai_pipeline(monkeypatch: pytest.MonkeyPatch, draft: str = "Draft reply text") -> None:
-    """Mock both classification (structured runtime) and drafting (crew)."""
+    """Mock both classification (structured runtime) and drafting (crew).
+
+    Also stubs the structured client factory so no test can reach a real
+    LLM endpoint even if the classify mock is replaced.
+    """
     import crewai
+    import email_assistant.core.structured_llm as structured_llm_module
     from email_assistant.core.structured_classification import (
         StructuredClassifier,
+    )
+
+    monkeypatch.setattr(
+        structured_llm_module,
+        "build_structured_client_from_settings",
+        lambda settings: object(),
     )
 
     def fake_classify(self, email_content, topics, fields=None):  # noqa: ANN001

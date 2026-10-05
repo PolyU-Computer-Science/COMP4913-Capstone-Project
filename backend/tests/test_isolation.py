@@ -33,16 +33,30 @@ SALES_EMAIL = {
 
 
 def _fake_kickoff(self, inputs=None, **kwargs):  # noqa: ANN001
-    classification = SimpleNamespace(
-        model_dump=lambda: {
-            "category": "question",
-            "topic": "topic",
-            "priority": "normal",
-            "summary": "summary",
-            "custom": {},
-        }
+    return SimpleNamespace(raw="Draft")
+
+
+def _fake_classify(self, email_content, topics, fields=None):  # noqa: ANN001
+    from email_assistant.core.structured_classification import (
+        ClassificationOutcome,
     )
-    return SimpleNamespace(pydantic=classification, raw="Draft")
+
+    return ClassificationOutcome(
+        category="question",
+        topic="topic",
+        priority="normal",
+        summary="summary",
+        custom_fields={},
+        structured_valid=True,
+        attempts=1,
+    )
+
+
+@pytest.fixture(autouse=True)
+def _mock_classifier(monkeypatch):
+    from email_assistant.core.structured_classification import StructuredClassifier
+
+    monkeypatch.setattr(StructuredClassifier, "classify", _fake_classify)
 
 
 @pytest.fixture(autouse=True)

@@ -163,17 +163,23 @@ def test_manual_field_not_overwritten_by_ai() -> None:
     monkeypatch.setattr(
         crewai.Crew,
         "kickoff",
-        lambda self, inputs=None, **kwargs: SimpleNamespace(
-            pydantic=SimpleNamespace(
-                model_dump=lambda: {
-                    "category": "question",
-                    "topic": "refund",
-                    "priority": "normal",
-                    "summary": "s",
-                    "custom": {},
-                }
-            ),
-            raw="Draft",
+        lambda self, inputs=None, **kwargs: SimpleNamespace(raw="Draft"),
+    )
+    from email_assistant.core.structured_classification import (
+        ClassificationOutcome,
+        StructuredClassifier,
+    )
+
+    monkeypatch.setattr(
+        StructuredClassifier,
+        "classify",
+        lambda self, email_content, topics, fields=None: ClassificationOutcome(
+            category="question",
+            topic="refund",
+            priority="normal",
+            summary="s",
+            structured_valid=True,
+            attempts=1,
         ),
     )
 
