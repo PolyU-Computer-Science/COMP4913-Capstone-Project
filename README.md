@@ -35,7 +35,7 @@ Generation (RAG).
 8. [Agentic Workflow](#agentic-workflow)
 9. [Safety & Threat Model](#safety--threat-model)
 10. [Evaluation Methodology](#evaluation-methodology)
-11. [Preliminary / Final Results](#preliminary--final-results)
+11. [Preliminary Results](#preliminary-results)
 12. [Current Implementation Status](#current-implementation-status)
 13. [Quick Start](#quick-start)
 14. [Project Structure](#project-structure)
@@ -56,21 +56,26 @@ serves Support, Sales, HR, etc. without cross-context leakage.
 - **Python Fetcher (`core/email_fetcher.py`):** Deterministic per-mailbox IMAP retrieval via `imap-tools` — no LLM tokens spent on mechanical operations.
 - **CrewAI Engine:** Staged LLM reasoning (Classifier → Drafter) with Pydantic-validated structured outputs.
 - **Knowledge / RAG:** Mailbox-scoped indexing, chunking, embeddings, and retrieval that grounds the drafter.
-- **Attachment Intelligence (planned):** Safely processes case-specific attachments (PDFs, images, structured files and archives) into normalized context for classification, field extraction and drafting, without mixing customer attachments into the shared knowledge base.
+- **Attachment Intelligence (planned):** Will safely process case-specific attachments (PDFs, images, structured files and archives) into normalized context for classification, field extraction and drafting, without mixing customer attachments into the shared knowledge base.
 - **MCP Runtime:** Connector tool discovery with default-deny permissions and audit logging.
-- **Routing Engine:** Deterministic case routing maps mailbox-scoped classifications and extracted fields to operational teams, then assigns work to eligible agents using configurable manual, round-robin, or balanced strategies.
+- **Routing Engine (planned):** Will deterministically map mailbox-scoped classifications and extracted fields to operational teams, then assign work to eligible agents using configurable manual, round-robin, or balanced strategies.
 - **FastAPI Backend (`backend/app/`):** REST API for email sync, AI processing, case management, and runtime settings — all state persisted in SQLite.
 - **React Frontend (`frontend/`):** Human-in-the-Loop UI for reviewing, editing, approving, and sending AI-generated drafts.
 - **Observability:** Per-stage processing runs recording latency, token usage, and failures.
 
 ### Research Focus
 
-This project investigates three central challenges in practical
+This project investigates four central challenges in practical
 LLM-based email automation:
 
 - the **reliability** of structured AI outputs;
 - **grounding** generated replies in organisational knowledge;
-- **safe control** of AI-generated external actions.
+- **safe control** of AI-generated external actions;
+- **operational automation** — turning AI-derived classifications into
+  deterministic team and agent assignments.
+
+Attachment intelligence is treated as a supporting capability for the first
+two challenges rather than a separate research question.
 
 ---
 
@@ -101,7 +106,7 @@ Existing LLM-based email assistants introduce several technical challenges:
 
 This project investigates a hybrid architecture that separates deterministic
 operations from LLM reasoning and introduces structured validation, knowledge
-grounding, and human approval.
+grounding, human approval, and deterministic operational routing.
 
 ---
 
@@ -167,12 +172,6 @@ The main contributions of this project are:
 - **Retrieval-Augmented Generation** grounded in mailbox-scoped, indexed
   knowledge with provenance tracking and injection-safe prompts.
 - **MCP tool permissions** with default-deny enforcement and audit logging.
-- A **safe multimodal attachment-processing pipeline** (planned) that separates
-  deterministic file parsing from AI-based visual understanding and preserves
-  case-level data isolation.
-- A deterministic **Team & Agent Routing Engine** that transforms AI-derived
-  topics, priorities, and structured fields into auditable work assignments
-  without delegating personnel decisions directly to the LLM.
 - A **Human-in-the-Loop approval workflow** that separates AI-generated drafts
   from external email actions.
 - **Runtime-selectable local and hosted LLM providers.**
@@ -180,6 +179,15 @@ The main contributions of this project are:
 - An **observability layer** (per-stage latency and token usage) and an
   **evaluation framework** for classification, structured-output reliability,
   RAG quality, model latency, and safety.
+
+### Planned Extensions
+
+- A **safe multimodal attachment-processing pipeline** that will separate
+  deterministic file parsing from AI-based visual understanding and preserve
+  case-level data isolation.
+- A **Team & Agent Routing layer** that will transform AI-derived topics,
+  priorities, and structured fields into auditable work assignments without
+  delegating personnel decisions directly to the LLM.
 
 ---
 
@@ -202,7 +210,7 @@ flowchart TB
     subgraph Core["Core Engine (src/email_assistant)"]
         Fetcher["Email Fetcher<br/>(IMAP, per-mailbox)"]
         Crew["CrewAI Pipeline<br/>Classifier --> Drafter"]
-        Routing["Routing Engine<br/>(rules → team → agent)"]
+        Routing["Routing Engine (planned)<br/>(rules → team → agent)"]
         RAG["Knowledge Retrieval<br/>(mailbox-scoped)"]
         MCP["MCP Runtime<br/>(permissions + audit)"]
         Sender["Email Sender<br/>(SMTP)"]
@@ -219,7 +227,7 @@ flowchart TB
     UI -->|HTTP /api| Routers
     Routers --> Fetcher
     Routers --> Crew
-    Routers --> Routing
+    Routers -.->|planned| Routing
     Routers --> RAG
     Routers --> MCP
     Routers --> Sender
@@ -231,7 +239,13 @@ flowchart TB
     MCP --> ObsDB
     Fetcher -.-> IMAP["IMAP Server"]
     Sender -.-> SMTP["SMTP Server"]
+
+    style Routing stroke-dasharray: 5 5
+    style ChromaDB stroke-dasharray: 5 5
 ```
+
+> Dashed nodes/edges indicate **planned** components; everything else is
+> implemented.
 
 ### How Data Flows
 
@@ -239,17 +253,22 @@ flowchart TB
    fetches all emails (read + unread, newest first) via IMAP and stores them as
    deduplicated tickets tagged with `mailbox_id`. Syncing without a selected
    mailbox syncs every configured mailbox.
-2. **Attachment Processing (planned)** — case-specific attachments are safely
-   parsed (PDF / DOCX / CSV / XLSX / image / ZIP) into normalized attachment
-   context that feeds the classifier and field extraction.
-3. **Process** — the staged pipeline runs mailbox-scoped: the Classifier uses
-   the mailbox's topics and attachment context; knowledge is retrieved from the
-   mailbox's own index; the Drafter grounds its reply in that context.
-4. **Route** — the deterministic routing engine maps the case's classification
-   and fields to a team (first-match routing rules), then the team's assignment
-   strategy selects an eligible agent.
-5. **Review & Send** — the human edits/approves the draft in the UI, then the
-   backend sends it via SMTP using the enabled mail account.
+2. **Attachment Processing (planned)** — case-specific attachments will be
+   safely parsed (PDF / DOCX / CSV / XLSX / image / ZIP) into normalized
+   attachment context that feeds the classifier and field extraction.
+3. **Classification + Field Extraction** — the staged pipeline runs
+   mailbox-scoped: the Classifier uses the mailbox's topics and (planned)
+   attachment context to determine category, topic, priority, and custom
+   field values.
+4. **Deterministic Routing / Assignment (planned)** — the routing engine will
+   map the case's classification and fields to a team (first-match routing
+   rules), then the team's assignment strategy will select an eligible agent.
+5. **Knowledge Retrieval / MCP** — mailbox-scoped knowledge is retrieved for
+   the case; permitted MCP connectors may provide additional context.
+6. **Drafting** — the Drafter grounds its reply in the retrieved context.
+7. **Human Review** — the human edits/approves the draft in the UI.
+8. **Send** — the backend sends the approved draft via SMTP using the enabled
+   mail account.
 
 ### Storage Strategy: SQLite (source of truth) + Chroma (vector index)
 
@@ -257,7 +276,8 @@ The system separates transactional business state from semantic retrieval:
 
 | Data | Store |
 | --- | --- |
-| Mailboxes / Emails / Cases / Topics / Fields / Teams / Agents / Routing | SQLite |
+| Mailboxes / Emails / Cases / Topics / Fields | SQLite |
+| Teams / Agents / Routing (planned) | SQLite |
 | AI & mail settings | SQLite |
 | Observability / MCP audit | SQLite |
 | Knowledge document metadata | SQLite |
@@ -310,7 +330,15 @@ AI":
 ```text
 deterministic (IMAP fetch)
         ↓
-AI reasoning (classify → draft)
+AI reasoning (classify + extract fields)
+        ↓
+deterministic routing (planned)
+        ↓
+grounded context (RAG / MCP)
+        ↓
+AI reasoning (draft)
+        ↓
+human approval
         ↓
 deterministic (SMTP send, after human gate)
 ```
@@ -330,7 +358,7 @@ Mailbox
   ├── Knowledge     → mailbox-scoped indexing + retrieval (RAG)
   ├── Connectors    → default-deny tool permissions + audit
   ├── AI Behaviour  → per-stage model / temperature / instructions
-  └── Routing Rules → map classified work to teams
+  └── Routing Rules → map classified work to teams (planned)
                         ↓
                       Teams
                         ↓
@@ -340,7 +368,7 @@ Mailbox
 This means a Support mailbox sees only Support topics, retrieves only Support
 knowledge, and can only invoke tools permitted to Support — verified by
 cross-mailbox isolation tests. Topics describe *what* an email is; teams
-describe *who* is responsible; routing rules map the former to the latter
+describe *who* is responsible; routing rules will map the former to the latter
 (rather than coupling topics directly to teams).
 
 ---
@@ -394,10 +422,12 @@ the settings DB on first startup — the DB is the single source of truth.
 
 ### Structured Validation
 
-The classification task uses **Pydantic Structured Outputs**, forcing the LLM
-to return strictly validated JSON. A tolerant fallback parser
-(`core/classification_parser.py`) recovers classifications from local models
-(e.g. Qwen3) that emit Python-literal style output instead of clean JSON.
+The application requests structured model output and validates the result
+against Pydantic schemas. A tolerant fallback parser
+(`core/classification_parser.py`) handles non-standard responses from local
+models (e.g. Qwen3) that emit Python-literal style output instead of clean
+JSON, before business-level validation (topic resolution, field validation)
+is applied.
 
 ```python
 from pydantic import BaseModel, Field
@@ -462,13 +492,13 @@ Incoming emails, retrieved knowledge documents, and tool results are treated as
 | Credential disclosure | Secrets encrypted at rest, masked in API responses, redacted in audit |
 | Runaway model execution | Token limits and request timeouts |
 | External-model privacy | Provider is configurable; local models are supported |
-| Incorrect AI-driven personnel assignment | LLM only supplies validated classification; deterministic routing rules select teams and agents |
-| Assignment outside team membership | Backend membership validation before assignment |
-| Agent overload | Capacity-aware assignment / unassigned team queue |
-| Malicious attachments | MIME validation, size limits, no execution |
-| ZIP bombs / path traversal | archive depth, extracted-size and safe-path controls |
-| Attachment prompt injection | extracted attachment content treated as untrusted data |
-| Cross-case attachment leakage | attachment context scoped to originating email/case |
+| Incorrect AI-driven personnel assignment (planned routing) | LLM only supplies validated classification; deterministic routing rules will select teams and agents |
+| Assignment outside team membership (planned routing) | Backend membership validation before assignment |
+| Agent overload (planned routing) | Capacity-aware assignment / unassigned team queue |
+| Malicious attachments (planned processing) | Planned mitigation: MIME validation, size limits, no execution |
+| ZIP bombs / path traversal (planned processing) | Planned mitigation: archive depth, extracted-size and safe-path controls |
+| Attachment prompt injection (planned processing) | Planned mitigation: extracted attachment content treated as untrusted data |
+| Cross-case attachment leakage (planned processing) | Planned mitigation: attachment context scoped to originating email/case |
 
 The system follows a **least-authority** design: AI components may propose
 actions, while external side effects remain under deterministic application and
@@ -486,8 +516,8 @@ human control.
 | RAG Retrieval | Different retrieval settings | Context Precision / Recall |
 | RAG Generation | No-RAG vs RAG | Faithfulness, Answer Relevancy |
 | Model Comparison | Local vs hosted LLM | Quality, latency, tokens, estimated cost |
-| Case Routing | Topic/priority rules + assignment strategies | Routing accuracy, assignment success, unassigned rate |
-| Workload Assignment | Round Robin vs Balanced | Distribution variance, max workload, unassigned rate |
+| Case Routing (planned) | Topic/priority rules + assignment strategies | Routing accuracy, assignment success, unassigned rate |
+| Workload Assignment (planned) | Round Robin vs Balanced | Distribution variance, max workload, unassigned rate |
 | Attachment-assisted classification | Body-only vs body+attachment context | Accuracy, Macro-F1 |
 | Attachment field extraction | Body-only vs body+attachment context | Field precision / recall / exact match |
 | Archive processing safety | Malformed / oversized / malicious archives | Rejection rate, safe-extraction tests |
@@ -507,7 +537,7 @@ Evaluation will use RAG-specific metrics such as `context_precision`,
 
 ---
 
-## Preliminary / Final Results
+## Preliminary Results
 
 The evaluation harness (`evaluation/`) runs real experiments against the frozen
 test split using OpenRouter (`xiaomi/mimo-v2.5-pro` for classification and
@@ -516,7 +546,20 @@ drafting, `qwen/qwen3-embedding-8b` for retrieval). The results below are a
 `scripts/run_evaluation.py`; raw per-record results are written under
 `evaluation/results/` (git-ignored).
 
-### Classification (Support mailbox)
+### Classification (Support mailbox) — Unconstrained MiMo Baseline
+
+This experiment measures the **unconstrained, out-of-box MiMo baseline** — no
+structured-output instructions and no validation. It is intentionally the
+bottom row of the planned comparison below, and demonstrates why the
+structured pipeline is necessary (RQ2):
+
+| Configuration | Category Accuracy | Valid Output Rate |
+|---|---:|---:|
+| Unconstrained MiMo (baseline) | 0.00 | — |
+| JSON instruction | — | — |
+| Proposed validated pipeline | — | — |
+
+*Baseline results (20-record sample):*
 
 | Metric | Value |
 | --- | --- |
@@ -553,12 +596,14 @@ are strong (0.90).
 
 | Metric | Value |
 | --- | --- |
-| Required-fact coverage | 0.00 (substring match) |
 | Unsupported-claim rate | 0.00 |
 
-The drafting coverage metric uses strict substring matching and does not yet
-reward paraphrases; this is a known limitation of the current automated proxy
-and will be replaced with a faithfulness rubric for the final report.
+> **Evaluation note — legacy lexical proxy (known-invalid for paraphrases):**
+> the earlier required-fact coverage metric (0.00) used strict substring
+> matching and therefore did not reward legitimate paraphrases; it is
+> documented here only as a known-invalid automated proxy, not as a result.
+> It will be replaced with a semantic faithfulness rubric for the final
+> report.
 
 > These are preliminary sample results, not a full run. The full test split is
 > 320 / 160 / 96 / 80 records for classification / field-extraction /
@@ -587,8 +632,8 @@ and will be replaced with a faithfulness rubric for the final report.
 | Observability (runs / latency / tokens) | ✅ Implemented | Unit tested |
 | Real semantic embedding provider | ✅ Implemented | OpenRouter `qwen/qwen3-embedding-8b` |
 | Vector store | ✅ SQLite (brute-force) | 📋 Chroma planned (Sprint 10) |
-| Attachment ingestion (inline) | ✅ Implemented | Unit tested |
-| Attachment analysis (PDF/image/archive) | 📋 Planned | Sprint 11 (not yet implemented) |
+| Inline attachment capture / storage | ✅ Implemented | Unit tested |
+| Attachment processing pipeline (PDF/image/archive) + MIME detection | 📋 Planned | Sprint 11 (not yet implemented) |
 | Teams / Agents / Routing | 📋 Planned | Sprint 9 (not yet implemented) |
 | Long-term memory | 📋 Planned | Not evaluated |
 
@@ -675,8 +720,6 @@ email_assistant/
 │   │       ├── mailboxes.py        # Mailboxes / topics / fields / knowledge / connectors
 │   │       ├── knowledge.py        # Knowledge indexing + retrieval endpoints
 │   │       ├── connectors.py       # MCP discovery / permissions / audit
-│   │       ├── teams.py            # Teams / agents / membership (planned, Sprint 9)
-│   │       ├── routing.py          # Routing rules (planned, Sprint 9)
 │   │       ├── observability.py    # Processing runs, per-email traces + stats
 │   │       ├── stats.py            # Dashboard statistics
 │   │       └── settings.py         # AI configs / stage settings / mail accounts CRUD
@@ -692,10 +735,8 @@ email_assistant/
 │           ├── dashboard.tsx       # Stats + category chart + recent activity
 │           ├── inbox.tsx           # Email list (master-detail), sync, AI process
 │           ├── cases.tsx           # Cases table (Category + Topic columns) + merged Details panel
-│           ├── mailboxes/          # Mailbox detail tabs (routing planned)
-│           ├── teams/              # Teams + members (planned, Sprint 9)
-│           ├── agents/             # Agents (planned, Sprint 9)
-│           └── settings/           # ai-models.tsx, general.tsx (Classification / Drafting tabs)
+│           ├── mailboxes/          # Mailbox detail layout + local navigation
+│           ├── settings/            # ai-models.tsx, general.tsx (Classification / Drafting tabs)
 ├── tests/                          # Core unit tests (fetcher, database, parser, …)
 └── src/
     └── email_assistant/
@@ -720,9 +761,7 @@ email_assistant/
         │   ├── vector_store.py     # VectorStore abstraction (SQLite now, Chroma planned)
         │   ├── knowledge_indexing.py # Indexing service (atomic replace)
         │   ├── knowledge_retrieval.py # Mailbox-scoped retrieval
-        │   ├── attachments.py       # Attachment processors (PDF/image/archive) (planned)
-        │   ├── attachments.py      # Attachment processors (PDF/image/archive) (planned, Sprint 11)
-│   ├── rag.py              # Retrieval query builder + context format
+        │   ├── rag.py              # Retrieval query builder + context format
         │   ├── mcp_runtime.py      # MCP client manager (transport abstraction)
         │   ├── tool_permissions.py # Default-deny tool permissions
         │   ├── observability.py    # Observer context manager
@@ -735,8 +774,7 @@ email_assistant/
         │   ├── openai_embeddings.py # OpenAI-compatible embedding client (multi-provider)
         │   ├── structured_llm.py   # OpenAI-compatible structured LLM client
         │   └── structured_classification.py # Structured classifier + business validation
-        └── tools/
-            └── custom_tool.py      # Placeholder (to be replaced with real tools)
+        └── tools/                  # (CrewAI tool package; real tooling via MCP runtime)
 ```
 
 ---
@@ -749,12 +787,14 @@ email_assistant/
 - Out-of-box MiMo category output is not constrained to the enum; the
   classification pipeline relies on structured-output validation + fallback
   parsing to compensate (see Preliminary Results).
+- Operational routing (teams, agents, assignment) is not yet implemented;
+  classification output is currently consumed by the case workflow only.
 - The `hashing` embedding client is retained for offline tests; semantic
   retrieval requires `EMBEDDING_PROVIDER=openrouter` and an API key.
 - Semantic retrieval currently uses a brute-force cosine scan over SQLite-stored
   vectors; a Chroma vector index is planned to scale to larger knowledge bases.
-- Attachments are ingested (inline) but their *content* is not yet analyzed;
-  PDF / image / archive understanding is planned.
+- Attachments are captured and stored (inline) but their *content* is not yet
+  analyzed; PDF / image / archive understanding is planned.
 - The MTR MCP connector is an external demo dependency; automated tests use a
   mock transport so CI does not depend on it.
 - External LLM providers may introduce privacy and data-governance
@@ -791,44 +831,52 @@ email_assistant/
 - [x] Real MCP transport (Streamable HTTP) — live-verified against MTR MCP
 - [x] MiMo structured runtime contract (`xiaomi/mimo-v2.5-pro`)
 - [x] Evaluation dataset v1 (950 records) + harness (metrics, runners)
-- [ ] VectorStore abstraction + ChromaVectorStore (SQLite now)
-- [ ] Per-mailbox / generation-based Chroma collections
-- [ ] Atomic generation switching (failed reindex keeps active index)
-- [ ] Retrieval + provenance integration over Chroma
-- [ ] Migration / rebuild command
-- [ ] Optional SQLite-vs-Chroma retrieval benchmark
 - [ ] Teams / Agents / Membership (DB + CRUD)
 - [ ] Case team ownership + assignee + assignment history
 - [ ] Mailbox routing rules (first-match, configurable)
 - [ ] Assignment engine (manual / round-robin / balanced)
 - [ ] Teams / Agents / Routing UI
 - [ ] Routing evaluation dataset + metrics
-- [ ] Attachment ingestion + MIME/type detection
+- [ ] Attachment processing pipeline + MIME/type detection
 - [ ] PDF / DOCX / CSV / XLSX text extraction
 - [ ] Image attachment analysis via configurable vision model
 - [ ] Safe ZIP expansion + recursive attachment processing
 - [ ] Attachment → classifier / field extraction context
 - [ ] Attachment provenance in cases
 - [ ] Attachment isolation + archive security tests
+- [ ] VectorStore abstraction + ChromaVectorStore (SQLite now)
+- [ ] Per-mailbox / generation-based Chroma collections
+- [ ] Atomic generation switching (failed reindex keeps active index)
+- [ ] Retrieval + provenance integration over Chroma
+- [ ] Migration / rebuild command
+- [ ] Optional SQLite-vs-Chroma retrieval benchmark
 - [ ] Full test-split evaluation run (preliminary sample complete)
-- [ ] CrewAI long-term memory via SQLite (`memory=True`)
+- [ ] Semantic faithfulness rubric for drafting evaluation
+- [ ] CrewAI long-term memory via SQLite (`memory=True`) — stretch goal, lowest priority
 - [ ] Final FYP Report
 
 ---
 
 ## References
 
-1. [About the repository README file — GitHub Docs](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-readmes)
-2. [Managing Email Overload in the Workplace — McMurtry, 2014](https://onlinelibrary.wiley.com/doi/10.1002/pfi.21424)
-3. [CrewAI Documentation](https://docs.crewai.com/core-concepts/Agents)
-4. [LLM01:2025 Prompt Injection — OWASP Gen AI Security Project](https://genai.owasp.org/llmrisk/llm01-prompt-injection/)
-5. [AI Risk Management Framework: Generative AI Profile — NIST](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence)
-6. [Context Precision — Ragas](https://docs.ragas.io/en/stable/concepts/metrics/available_metrics/context_precision/)
-7. [Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks — Lewis et al., 2020](https://arxiv.org/abs/2005.11401)
-8. [Organize team inboxes — Intercom](https://www.intercom.com/help/en/articles/197-organize-team-inboxes)
-9. [About omnichannel routing — Zendesk](https://support.zendesk.com/hc/en-us/articles/4409149119514-About-omnichannel-routing)
-10. [Organize Agents into Groups — Freshdesk](https://support.freshdesk.com/support/solutions/articles/37604-organize-agents-into-groups)
-11. [Manage Collections — Chroma Docs](https://docs.trychroma.com/docs/collections/manage-collections)
-12. [Metadata Filtering — Chroma Docs](https://docs.trychroma.com/docs/querying-collections/metadata-filtering)
-13. [MiMo-V2.5 — OpenRouter](https://openrouter.ai/xiaomi/mimo-v2.5)
-14. [MiMo-V2.5-Pro — OpenRouter](https://openrouter.ai/xiaomi/mimo-v2.5-pro)
+### Research & Standards
+
+1. [Managing Email Overload in the Workplace — McMurtry, 2014](https://onlinelibrary.wiley.com/doi/10.1002/pfi.21424)
+2. [Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks — Lewis et al., 2020](https://arxiv.org/abs/2005.11401)
+3. [LLM01:2025 Prompt Injection — OWASP Gen AI Security Project](https://genai.owasp.org/llmrisk/llm01-prompt-injection/)
+4. [AI Risk Management Framework: Generative AI Profile — NIST](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence)
+5. [Context Precision — Ragas](https://docs.ragas.io/en/stable/concepts/metrics/available_metrics/context_precision/)
+
+### Technical Documentation
+
+6. [CrewAI Documentation](https://docs.crewai.com/core-concepts/Agents)
+7. [Manage Collections — Chroma Docs](https://docs.trychroma.com/docs/collections/manage-collections)
+8. [Metadata Filtering — Chroma Docs](https://docs.trychroma.com/docs/querying-collections/metadata-filtering)
+9. [MiMo-V2.5 — OpenRouter](https://openrouter.ai/xiaomi/mimo-v2.5)
+10. [MiMo-V2.5-Pro — OpenRouter](https://openrouter.ai/xiaomi/mimo-v2.5-pro)
+
+### Product Design References
+
+11. [Organize team inboxes — Intercom](https://www.intercom.com/help/en/articles/197-organize-team-inboxes)
+12. [About omnichannel routing — Zendesk](https://support.zendesk.com/hc/en-us/articles/4409149119514-About-omnichannel-routing)
+13. [Organize Agents into Groups — Freshdesk](https://support.freshdesk.com/support/solutions/articles/37604-organize-agents-into-groups)
