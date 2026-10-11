@@ -174,7 +174,8 @@ See `evaluation/README.md` for dataset methodology and `evaluation/results/`
 ### Run Tests
 
 ```bash
-uv run pytest            # 284 tests (core + backend API), no real API calls required
+uv run pytest            # offline: no .env, API key or network needed
+cd frontend && npm test  # frontend component tests (vitest)
 ```
 
 ### Lint & Format

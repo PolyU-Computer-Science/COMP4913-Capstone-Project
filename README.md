@@ -1,6 +1,6 @@
 # PolyU — Agentic AI Email Assistant
 
-> **Final Year Project · Department of Computing**
+> **COMP4913 Capstone Project (2026/27) · Department of Computing, The Hong Kong Polytechnic University**
 
 A human-supervised, multi-stage AI email assistant that combines
 deterministic email processing with LLM-based reasoning.
@@ -14,7 +14,7 @@ agentic AI for practical email management, with structured output
 validation, Human-in-the-Loop controls, and Retrieval-Augmented
 Generation (RAG).
 
-[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.10–3.13-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688.svg)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
 [![CrewAI](https://img.shields.io/badge/CrewAI-1.15.12-purple.svg)](https://docs.crewai.com/)
@@ -41,7 +41,8 @@ Generation (RAG).
 14. [Project Structure](#project-structure)
 15. [Limitations](#limitations)
 16. [Roadmap](#roadmap)
-17. [References](#references)
+17. [Use of Generative AI](#use-of-generative-ai)
+18. [References](#references)
 
 ---
 
@@ -54,7 +55,7 @@ fields, knowledge base, connectors, and AI behaviour — so the same engine
 serves Support, Sales, HR, etc. without cross-context leakage.
 
 - **Python Fetcher (`core/email_fetcher.py`):** Deterministic per-mailbox IMAP retrieval via `imap-tools` — no LLM tokens spent on mechanical operations.
-- **CrewAI Engine:** Staged LLM reasoning (Classifier → Drafter) with Pydantic-validated structured outputs.
+- **Staged LLM Engine:** Classifier → Drafter. Classification runs through a schema-validated structured client (`core/structured_classification.py`); drafting runs as a CrewAI crew (`agents/crew.py`).
 - **Knowledge / RAG:** Mailbox-scoped indexing, chunking, embeddings, and retrieval that grounds the drafter.
 - **Attachment Intelligence (planned):** Will safely process case-specific attachments (PDFs, images, structured files and archives) into normalized context for classification, field extraction and drafting, without mixing customer attachments into the shared knowledge base.
 - **MCP Runtime:** Connector tool discovery with default-deny permissions and audit logging.
@@ -412,8 +413,8 @@ to the originating email/case to prevent cross-case data leakage.
 
 | Stage | Task | Goal | Tools |
 | --- | --- | --- | --- |
-| **Classifier** | `classify_email_task` | Determine category (question/incident/problem/task/spam), topic, priority, summary, and custom field values. | None (LLM reasoning) |
-| **Drafter** | `draft_reply_task` | Generate context-aware reply drafts matching professional tone, grounded in retrieved knowledge. | RAG knowledge context |
+| **Classifier** | `StructuredClassifier` (web API) / `classify_email_task` (CLI crew) | Determine category (question/incident/problem/task/spam), topic, priority, summary, and custom field values. | None (LLM reasoning) |
+| **Drafter** | `draft_reply_task` (CrewAI `draft_only_crew`) | Generate context-aware reply drafts matching professional tone, grounded in retrieved knowledge. | RAG knowledge context |
 
 Each stage gets its own LLM instance with **per-stage overrides** (temperature,
 max tokens, even role/backstory) stored in the settings DB. Built-in defaults
@@ -422,24 +423,29 @@ the settings DB on first startup — the DB is the single source of truth.
 
 ### Structured Validation
 
-The application requests structured model output and validates the result
-against Pydantic schemas. A tolerant fallback parser
-(`core/classification_parser.py`) handles non-standard responses from local
-models (e.g. Qwen3) that emit Python-literal style output instead of clean
-JSON, before business-level validation (topic resolution, field validation)
-is applied.
+The application requests JSON output and validates the result against the
+`ClassificationContract` Pydantic schema (`core/structured_classification.py`)
+before business-level validation (topic resolution, field validation) is
+applied. Malformed JSON triggers one repair attempt. A tolerant fallback
+parser (`core/classification_parser.py`) is kept for the CLI crew path, where
+local models (e.g. Qwen3) may emit Python-literal style output.
 
 ```python
-from pydantic import BaseModel, Field
+CATEGORIES = ("question", "incident", "problem", "task", "spam")
+PRIORITIES = ("low", "normal", "high", "urgent")
 
 
-class EmailClassification(BaseModel):
-    category: str = Field(description="question, incident, problem, task, or spam")
-    topic: str = Field(description="What the email is about, e.g. refund, bug_report, password_reset")
-    priority: str = Field(description="low, normal, high, or urgent")
-    summary: str = Field(description="1-sentence summary of the email content")
-    custom: dict = Field(description="Per-mailbox custom field values")
+class ClassificationContract(BaseModel):
+    category: str          # must be one of CATEGORIES, else schema-invalid
+    topic: str = ""        # resolved against the mailbox's topics
+    priority: str = "normal"  # normalised; unknown values fall back to "normal"
+    summary: str = ""
+    custom_fields: dict[str, Any] = {}  # validated per field definition
 ```
+
+The allowed category and priority values are listed in the prompt **and**
+enforced by the schema, so a free-form label such as "Technical Support" is
+rejected rather than stored.
 
 > **Note:** `status` is intentionally **not** part of the AI classification
 > output — it is a workflow state managed by humans/automations, not something
@@ -451,7 +457,7 @@ Each incoming email is treated as a **ticket**:
 
 | Field | Meaning | Values | Set by |
 | --- | --- | --- | --- |
-| **status** | Lifecycle stage of the ticket | `new` → `processed` → `sent` (workflow states in DB) | Workflow (not AI) |
+| **status** | Lifecycle stage of the ticket | `new` → `processing` → `processed` → `sent` (`failed` on a processing error) | Workflow (not AI) |
 | **priority** | How urgent it is | `low` / `normal` / `high` / `urgent` | AI suggests, human can override |
 | **category** | What *kind* of request it is (stable, small set) | `question` / `incident` / `problem` / `task` / `spam` | AI (classifier) |
 | **topic** | What the email is *about* (open-ended subject matter) | `refund`, `bug_report`, `password_reset`, `lead`, … | AI (classifier) |
@@ -558,20 +564,21 @@ drafting, `qwen/qwen3-embedding-8b` for retrieval). The results below are a
 `scripts/run_evaluation.py`; raw per-record results are written under
 `evaluation/results/` (git-ignored).
 
-### Classification (Support mailbox) — Unconstrained MiMo Baseline
+### Classification (Support mailbox) — Category-Unconstrained Run
 
-This experiment measures the **unconstrained, out-of-box MiMo baseline** — no
-structured-output instructions and no validation. It is intentionally the
-bottom row of the planned comparison below, and demonstrates why the
-structured pipeline is necessary (RQ2):
+This sample was produced by the structured classification pipeline
+(`StructuredClassifier`) **before** the category taxonomy was enforced: the
+prompt required JSON but did not list the allowed categories, and the schema
+accepted any string. The run is kept as the "JSON instruction only" data
+point for RQ2; the taxonomy-enforced pipeline has not been re-run yet.
 
 | Configuration | Category Accuracy | Valid Output Rate |
 |---|---:|---:|
-| Unconstrained MiMo (baseline) | 0.00 | — |
-| JSON instruction | — | — |
-| Proposed validated pipeline | — | — |
+| Unconstrained (free-form prompt) | — | — |
+| JSON instruction, category unconstrained | 0.00 | — |
+| Proposed validated pipeline (taxonomy in prompt + schema) | 🔄 re-run pending | 🔄 re-run pending |
 
-*Baseline results (20-record sample):*
+*Category-unconstrained results (20-record sample):*
 
 | Metric | Value |
 | --- | --- |
@@ -579,12 +586,13 @@ structured pipeline is necessary (RQ2):
 | Topic accuracy | 0.90 |
 | Topic resolution rate | 0.90 |
 
-**Finding:** MiMo's out-of-box category output is not constrained to the
-predefined enum (question/incident/problem/task/spam) — it emits free-form
-labels such as "Technical Support" or "Customer Inquiry". This directly
-motivates the structured-output validation + tolerant fallback parser in the
-classification pipeline (RQ2). Topic extraction and resolution, by contrast,
-are strong (0.90).
+**Finding:** without the taxonomy in the prompt, MiMo's category output was
+not constrained to the predefined enum (question/incident/problem/task/spam) —
+it emitted free-form labels such as "Technical Support" or "Customer Inquiry",
+and the schema accepted them. This motivated listing the allowed values in the
+prompt and rejecting out-of-taxonomy categories in `ClassificationContract`
+(RQ2). Topic extraction and resolution, by contrast, were strong (0.90)
+because the mailbox's topics were already listed in the prompt.
 
 ### Custom-field extraction (Support mailbox)
 
@@ -629,7 +637,7 @@ are strong (0.90).
 | --- | --- | --- |
 | IMAP email retrieval (per-mailbox) | ✅ Implemented | Unit / integration tested |
 | Multi-mailbox isolation | ✅ Implemented | Cross-mailbox isolation tested |
-| Email classification | ✅ Implemented | 🔄 Evaluation pending |
+| Email classification | ✅ Implemented (taxonomy enforced) | 🔄 Re-run pending |
 | Structured output | ✅ Implemented | 🔄 Comparative evaluation pending |
 | Topic resolution | ✅ Implemented | Unit tested |
 | Custom fields (typed + validated) | ✅ Implemented | Unit tested |
@@ -661,8 +669,8 @@ are strong (0.90).
 ### 1. Clone & Install
 
 ```bash
-git clone <repo-url>
-cd email_assistant
+git clone https://github.com/PolyU-Computer-Science/COMP4913-Capstone-Project.git
+cd COMP4913-Capstone-Project
 
 # Install Python runtime and test dependencies using uv (creates .venv automatically)
 uv sync --group dev
@@ -700,8 +708,12 @@ Open `http://localhost:5173`.
 ### Run Tests
 
 ```bash
-uv run pytest            # 284 tests (core + backend API), no real API calls required
+uv run pytest                 # core + backend API tests; offline, no .env or API key needed
+cd frontend && npm test       # frontend component tests (vitest)
 ```
+
+Tests pin a fake provider configuration and stub DNS/LLM calls, so they never
+use the keys in your `.env` or make network requests.
 
 For the full configuration reference, API reference, and development workflow,
 see [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) and [`docs/API.md`](docs/API.md).
@@ -711,16 +723,27 @@ see [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) and [`docs/API.md`](docs/API.md
 ## Project Structure
 
 ```plaintext
-email_assistant/
-├── .env.example                    # Environment variable template
-├── .env                            # Active environment config (git-ignored)
-├── pyproject.toml                  # Python dependencies (managed by uv)
+COMP4913-Capstone-Project/
+├── .env.example                    # Environment variable template (copy to .env, git-ignored)
+├── .github/workflows/ci.yml        # CI: pytest + frontend lint / test / build
+├── AGENTS.md                       # CrewAI reference for AI coding assistants
+├── conftest.py                     # Hermetic test fixtures (temp DBs, offline provider config)
+├── pyproject.toml / uv.lock        # Python dependencies (managed by uv)
 ├── pytest.ini
-├── knowledge/
-│   └── user_preference.txt         # Static knowledge base content
 ├── docs/
 │   ├── API.md                      # API reference
 │   └── DEVELOPMENT.md              # Configuration & development guide
+├── evaluation/                     # Evaluation harness (see evaluation/README.md)
+│   ├── datasets/v1/*.jsonl         # Synthetic dataset v1 (950 records, dev/test split)
+│   ├── manifest.json               # Dataset counts, seed and split method
+│   ├── generator.py                # Seeded dataset generator
+│   ├── harness.py / runners.py     # Experiment runners
+│   ├── predictors.py               # Adapters onto the production pipeline
+│   └── metrics.py / validators.py  # Metrics + dataset validation
+├── scripts/
+│   ├── run_evaluation.py           # Real evaluation run (consumes API credit)
+│   ├── probe_mcp.py / smoke_mcp_mtr.py      # Live MCP checks
+│   └── smoke_openai_embeddings.py  # Live embedding provider check
 ├── backend/
 │   ├── app/
 │   │   ├── main.py                 # FastAPI app factory, CORS, entry point (uv run api)
@@ -735,59 +758,65 @@ email_assistant/
 │   │       ├── observability.py    # Processing runs, per-email traces + stats
 │   │       ├── stats.py            # Dashboard statistics
 │   │       └── settings.py         # AI configs / stage settings / mail accounts CRUD
-│   └── tests/                      # FastAPI API tests (TestClient, temp DBs)
-├── frontend/                       # React 19 + Vite + Tailwind 4 + shadcn/ui
-│   ├── package.json                # npm scripts (dev / build / lint)
-│   ├── vite.config.ts              # Dev server + /api proxy to backend
+│   └── tests/                      # API, isolation, RAG, MCP, evaluation tests (TestClient, temp DBs)
+├── frontend/                       # React 19 + Vite + Tailwind 4 + shadcn/ui (see frontend/README.md)
 │   └── src/
 │       ├── App.tsx                 # Route registration
-│       ├── components/             # Sidebar, header, category/priority badges, case fields, empty state
+│       ├── components/             # App shell, badges, case fields; ui/ = shadcn primitives
 │       ├── lib/                    # API client, shared types
+│       ├── test/                   # vitest setup + tests
 │       └── pages/
 │           ├── dashboard.tsx       # Stats + category chart + recent activity
 │           ├── inbox.tsx           # Email list (master-detail), sync, AI process
-│           ├── cases.tsx           # Cases table (Category + Topic columns) + merged Details panel
-│           ├── mailboxes/          # Mailbox detail layout + local navigation
-│           ├── settings/            # ai-models.tsx, general.tsx (Classification / Drafting tabs)
-├── tests/                          # Core unit tests (fetcher, database, parser, …)
+│           ├── cases.tsx           # Cases table (Category + Topic columns)
+│           ├── case-detail.tsx     # Case details, draft editor, approve + send
+│           ├── mailboxes.tsx       # Mailbox list
+│           ├── mailboxes/          # Mailbox detail, creation, local nav, tabs/ (topics, fields, knowledge, …)
+│           └── settings/           # ai-models.tsx, general.tsx (Classification / Drafting tabs)
+├── tests/                          # Core unit tests (fetcher, sender, database, parser, crew, seeds)
 └── src/
     └── email_assistant/
         ├── main.py                 # CLI entry points (run, train, test, replay)
-        ├── models.py               # Pydantic models (EmailClassification)
+        ├── models.py               # Pydantic models (EmailClassification, CLI crew)
         ├── service.py              # Multi-provider LLM configuration & validation
         ├── agents/
         │   └── crew.py             # EmailAssistant crew (Classifier & Drafter); stage config from settings DB
-        ├── core/
-        │   ├── email_fetcher.py    # Deterministic per-mailbox IMAP retrieval
-        │   ├── email_sender.py     # SMTP sending (SSL / STARTTLS)
-        │   ├── database.py         # SQLite email store (tickets, field values)
-        │   ├── settings_store.py   # SQLite settings store (encrypted secrets)
-        │   ├── mailbox_context.py  # MailboxRuntimeContext service
-        │   ├── topics.py           # Topic resolution + validation
-        │   ├── field_validation.py # Custom field value validation
-        │   ├── extraction.py       # AI extraction client abstraction
-        │   ├── extraction_service.py # Topic + field extraction (partial success)
-        │   ├── chunking.py         # Knowledge chunking
-        │   ├── embeddings.py       # Embedding client abstraction + compat
-        │   ├── knowledge_store.py  # Knowledge documents + chunks (SQLite; Chroma planned)
-        │   ├── knowledge_indexing.py # Indexing service (atomic replace)
-        │   ├── knowledge_retrieval.py # Mailbox-scoped retrieval
-        │   ├── rag.py              # Retrieval query builder + context format
-        │   ├── structured_llm.py   # OpenAI-compatible structured LLM client
-        │   ├── structured_classification.py # Structured classifier (5-layer contract)
-        │   ├── mcp_runtime.py      # MCP client manager (transport abstraction)
-        │   ├── tool_permissions.py # Default-deny tool permissions
-        │   ├── observability.py    # Observer context manager
-        │   ├── observability_store.py # Processing runs, traces + tool audit
-        │   ├── migrations.py       # Legacy mailbox backfill
-        │   ├── classification_parser.py  # Tolerant classifier output parser
-        │   ├── stage_seeds.py      # Built-in stage defaults (classification + draft)
-        │   ├── stage_defaults.py   # Stage defaults + DB override merging
-        │   ├── mailbox_seeds.py    # Default mailbox seed (Gmail + study/work topics + fields)
-        │   ├── openai_embeddings.py # OpenAI-compatible embedding client (multi-provider)
-        │   └── structured_classification.py # Structured classifier + business validation
-        └── tools/                  # (CrewAI tool package; real tooling via MCP runtime)
+        ├── tools/                  # (CrewAI tool package; real tooling via MCP runtime)
+        └── core/
+            ├── email_fetcher.py    # Deterministic per-mailbox IMAP retrieval
+            ├── email_sender.py     # SMTP sending (SSL / STARTTLS)
+            ├── database.py         # SQLite email store (tickets, field values)
+            ├── settings_store.py   # SQLite settings store (encrypted secrets)
+            ├── migrations.py       # Legacy mailbox backfill
+            ├── mailbox_context.py  # MailboxRuntimeContext service
+            ├── mailbox_seeds.py    # Default mailbox seed (Gmail + study/work topics + fields)
+            ├── stage_seeds.py      # Built-in stage defaults (classification + draft)
+            ├── stage_defaults.py   # Stage defaults + DB override merging
+            ├── topics.py           # Topic resolution + validation
+            ├── field_validation.py # Custom field value validation
+            ├── extraction.py       # AI extraction client abstraction
+            ├── extraction_service.py # Topic + field extraction (partial success)
+            ├── structured_llm.py   # OpenAI-compatible structured LLM client (retry + repair)
+            ├── structured_classification.py # ClassificationContract + business validation
+            ├── classification_parser.py  # Tolerant classifier output parser (CLI crew path)
+            ├── chunking.py         # Knowledge chunking
+            ├── embeddings.py       # Embedding client abstraction + compat
+            ├── openai_embeddings.py # OpenAI-compatible embedding client (multi-provider)
+            ├── knowledge_store.py  # Knowledge documents + chunks (SQLite; Chroma planned)
+            ├── knowledge_indexing.py # Indexing service (atomic replace)
+            ├── knowledge_retrieval.py # Mailbox-scoped retrieval
+            ├── rag.py              # Retrieval query builder + context format
+            ├── mcp_runtime.py      # MCP client manager (transport abstraction)
+            ├── mcp_transport.py    # Streamable HTTP transport + SSRF guard
+            ├── tool_permissions.py # Default-deny tool permissions
+            ├── tool_planner.py     # Action proposals for MCP tools
+            ├── tool_executor.py    # Permission-checked, audited tool execution gateway
+            ├── observability.py    # Observer context manager
+            └── observability_store.py # Processing runs, traces + tool audit
 ```
+
+Runtime data (`data/*.db`, `data/.secret_key`) and evaluation outputs
+(`evaluation/results/`) are created on first run and git-ignored.
 
 ---
 
@@ -796,9 +825,10 @@ email_assistant/
 - The five-category classification taxonomy may not generalise to all
   organisations.
 - Draft quality depends on the selected LLM and prompt configuration.
-- Out-of-box MiMo category output is not constrained to the enum; the
-  classification pipeline relies on structured-output validation + fallback
-  parsing to compensate (see Preliminary Results).
+- Without the taxonomy in the prompt, MiMo's category output was not
+  constrained to the enum; the pipeline now lists the allowed values and
+  rejects out-of-taxonomy categories, at the cost of failing (and surfacing
+  for retry) emails the model cannot place in a category.
 - Operational routing (teams, agents, assignment) is not yet implemented;
   classification output is currently consumed by the case workflow only.
 - The `hashing` embedding client is retained for offline tests; semantic
@@ -865,7 +895,29 @@ email_assistant/
 - [ ] Full test-split evaluation run (preliminary sample complete)
 - [ ] Semantic faithfulness rubric for drafting evaluation
 - [ ] CrewAI long-term memory via SQLite (`memory=True`) — stretch goal, lowest priority
-- [ ] Final FYP Report
+- [ ] Re-run classification evaluation with the taxonomy-enforced contract
+
+### Capstone Milestones (COMP4913 Handbook 2026/27)
+
+- [ ] Project Proposal — 23 Oct 2026
+- [ ] Interim Report + Presentation Video — 8 Jan 2027
+- [ ] Final Report + Turnitin report + One-page Project Summary (IEEE format) — 9 Apr 2027
+- [ ] Final Presentation — 19–21 Apr 2027
+
+---
+
+## Use of Generative AI
+
+Per the COMP4913 Handbook (§5.8 ii) and PolyU's *Guidelines for Students on
+the Use of Generative Artificial Intelligence*, GenAI use in the code or
+reports must be acknowledged and approved by the supervisor in advance.
+
+- **Development tooling:** AI coding assistants were used during development
+  (`AGENTS.md` holds the CrewAI reference given to them). _Describe the
+  scope of use and how generated output was reviewed before submission._
+- **Runtime component:** LLMs (default `xiaomi/mimo-v2.5-pro` via OpenRouter)
+  are part of the system under study, not authors of the report.
+- **Supervisor approval:** _to be recorded (date / scope)._
 
 ---
 
@@ -881,7 +933,7 @@ email_assistant/
 
 ### Technical Documentation
 
-6. [CrewAI Documentation](https://docs.crewai.com/core-concepts/Agents)
+6. [CrewAI Documentation](https://docs.crewai.com/en/concepts/agents)
 7. [Manage Collections — Chroma Docs](https://docs.trychroma.com/docs/collections/manage-collections)
 8. [Metadata Filtering — Chroma Docs](https://docs.trychroma.com/docs/querying-collections/metadata-filtering)
 9. [MiMo-V2.5 — OpenRouter](https://openrouter.ai/xiaomi/mimo-v2.5)
