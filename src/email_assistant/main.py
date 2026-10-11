@@ -16,7 +16,7 @@ def run():
         return
 
     if not emails:
-        print("No unread emails.")
+        print("No emails fetched.")
         return
 
     for index, email in enumerate(emails, start=1):
