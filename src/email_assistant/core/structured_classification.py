@@ -11,9 +11,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from email_assistant.core.structured_llm import OpenAICompatibleStructuredClient, StructuredLLMResult
+
+CATEGORIES = ("question", "incident", "problem", "task", "spam")
+PRIORITIES = ("low", "normal", "high", "urgent")
 
 
 class ClassificationContract(BaseModel):
@@ -24,6 +27,24 @@ class ClassificationContract(BaseModel):
     priority: str = Field(default="normal", description="low, normal, high, or urgent")
     summary: str = Field(default="")
     custom_fields: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("category", mode="before")
+    @classmethod
+    def _category_in_taxonomy(cls, value: Any) -> str:
+        # Downstream code relies on the fixed taxonomy, so a free-form label
+        # (e.g. "Technical Support") is a schema failure, not a category.
+        normalised = str(value or "").strip().lower()
+        if normalised not in CATEGORIES:
+            raise ValueError(f"category must be one of {', '.join(CATEGORIES)}")
+        return normalised
+
+    @field_validator("priority", mode="before")
+    @classmethod
+    def _priority_in_scale(cls, value: Any) -> str:
+        # Priority is a human-overridable suggestion: unknown values fall
+        # back to the default instead of failing the whole classification.
+        normalised = str(value or "").strip().lower()
+        return normalised if normalised in PRIORITIES else "normal"
 
 
 @dataclass
@@ -87,6 +108,8 @@ def build_classification_prompt(
         "valid JSON object matching this schema: "
         '{"category": str, "topic": str, "priority": str, '
         '"summary": str, "custom_fields": object}. '
+        f"category must be exactly one of: {', '.join(CATEGORIES)}. "
+        f"priority must be exactly one of: {', '.join(PRIORITIES)}. "
         "The topic must be one of the provided available topics if one fits, "
         "otherwise empty. Do not invent topics."
     )

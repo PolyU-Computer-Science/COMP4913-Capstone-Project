@@ -247,3 +247,36 @@ def test_structured_classifier_rejects_invalid_topic_and_foreign_field() -> None
     assert outcome.topic_id is None
     # Invalid select value + foreign field id both rejected.
     assert outcome.custom_fields == {}
+
+
+def test_contract_normalises_category_and_priority() -> None:
+    data = ClassificationContract(category=" Question ", priority="HIGH")
+    assert data.category == "question"
+    assert data.priority == "high"
+    # Unknown priority falls back to the default rather than failing.
+    assert ClassificationContract(category="task", priority="asap").priority == "normal"
+
+
+def test_free_form_category_is_schema_invalid() -> None:
+    transport = _FakeTransport()
+    transport.handler = lambda payload: _FakeResponse(
+        200,
+        _chat_response(
+            '{"category": "Technical Support", "topic": "", "priority": "normal", '
+            '"summary": "", "custom_fields": {}}'
+        ),
+    )
+    outcome = StructuredClassifier(_client(transport)).classify("hello", [])
+    assert outcome.structured_valid is False
+    assert outcome.category == ""
+
+
+def test_classification_prompt_lists_allowed_categories() -> None:
+    from email_assistant.core.structured_classification import (
+        CATEGORIES,
+        build_classification_prompt,
+    )
+
+    system, _ = build_classification_prompt(email_content="hi", topics=[])
+    for category in CATEGORIES:
+        assert category in system
