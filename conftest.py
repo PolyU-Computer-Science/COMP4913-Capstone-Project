@@ -12,6 +12,19 @@ def _hermetic_settings_db(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _offline_provider_env(monkeypatch):
+    """Pin a fake provider config so `uv run pytest` works without a .env.
+
+    Overrides any developer .env values, so tests never pick up a real API
+    key or a network embedding provider.
+    """
+    monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_MODEL", "xiaomi/mimo-v2.5-pro")
+    monkeypatch.setenv("EMBEDDING_PROVIDER", "hashing")
+
+
+@pytest.fixture(autouse=True)
 def _no_real_llm_calls(monkeypatch):
     """Hard-offline guard: un-mocked LLM calls with no fake transport fail.
 

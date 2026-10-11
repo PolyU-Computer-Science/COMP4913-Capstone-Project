@@ -39,6 +39,20 @@ def _reset(tmp_path, monkeypatch):
     yield
 
 
+@pytest.fixture(autouse=True)
+def _offline_dns(monkeypatch):
+    """Resolve every host to a public IP so the SSRF guard needs no real DNS.
+
+    Tests that exercise the guard itself override this with their own stub.
+    """
+    import email_assistant.core.mcp_transport as module
+
+    def fake_getaddrinfo(host, port):
+        return [(None, None, None, None, ("93.184.216.34", 0))]
+
+    monkeypatch.setattr(module.socket, "getaddrinfo", fake_getaddrinfo)
+
+
 # ---- transport tests ----
 
 class _FakeHttpResponse:
