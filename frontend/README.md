@@ -1,32 +1,33 @@
-# React + TypeScript + Vite
+# Frontend — Human-in-the-Loop UI
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React 19 + TypeScript + Vite + Tailwind CSS 4 + shadcn/ui client for the
+Agentic AI Email Assistant. See the [project README](../README.md) for the
+overall architecture.
 
-Currently, two official plugins are available:
+## Scripts
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install      # install dependencies
+npm run dev      # dev server on http://localhost:5173 (proxies /api to :8000)
+npm run lint     # oxlint
+npm test         # vitest (jsdom)
+npm run build    # tsc -b && vite build
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+The backend must be running (`uv run api` from the repository root) for the
+UI to load data. The proxy target can be changed with `VITE_API_TARGET` in
+`frontend/.env` (default `http://localhost:8000`).
+
+## Layout
+
+```plaintext
+src/
+├── App.tsx              # route registration
+├── main.tsx             # React entry point
+├── components/          # app shell (sidebar, header) + shared badges/fields
+│   └── ui/              # shadcn/ui primitives
+├── hooks/               # shared React hooks
+├── lib/                 # API client (api.ts), shared types, utils
+├── pages/               # dashboard, inbox, cases, case detail, mailboxes, settings
+└── test/                # vitest setup + tests
+```
